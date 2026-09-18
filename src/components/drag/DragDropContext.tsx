@@ -357,10 +357,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     <DragContext.Provider value={value}>
       <View
         style={styles.fill}
-        onMoveShouldSetResponderCapture={() => !!dragRef.current?.active}
+        onMoveShouldSetResponderCapture={() => Platform.OS !== 'web' && !!dragRef.current?.active}
         onResponderMove={(event) => moveDrag(event.nativeEvent.pageX, event.nativeEvent.pageY)}
         onResponderRelease={endDrag}
-        onResponderTerminate={cancelDrag}
+        onResponderTerminate={() => {
+          if (Platform.OS !== 'web') cancelDrag();
+        }}
       >
         {children}
         {drag?.active ? (
