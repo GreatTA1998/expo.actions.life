@@ -17,6 +17,11 @@
         "appName": "actions.life",
         "sku": "life.actions.expo",
         "language": "en-US"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed",
+        "changesNotSentForReview": true
       }
     }
   }
