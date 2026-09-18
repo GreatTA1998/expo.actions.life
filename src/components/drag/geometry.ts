@@ -132,3 +132,12 @@ export function measureNode(node: unknown, cb: (rect: Rect) => void, zoneId?: st
   } | null;
   view?.measureInWindow?.((x, y, width, height) => cb({ x, y, width, height }));
 }
+
+/** Convert window-space drag coords into the ghost layer's local space. */
+export function windowToLayer(
+  windowX: number,
+  windowY: number,
+  layerOrigin: { x: number; y: number },
+): { x: number; y: number } {
+  return { x: windowX - layerOrigin.x, y: windowY - layerOrigin.y };
+}

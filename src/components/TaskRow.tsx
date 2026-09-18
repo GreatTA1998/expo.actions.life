@@ -88,63 +88,63 @@ export function TaskRow({
           : {})}
         style={[styles.row, { paddingLeft: 12 + depth * 18 }, highlighted && styles.nestHot]}
       >
-        {hasChildren ? (
-          <Pressable onPress={() => onToggleCollapsed(task.id)} hitSlop={8} style={styles.chevronHit}>
-            <Text style={styles.chevron}>
-              {task.isCollapsed ? '▸' : '▾'} {children.filter((child) => child.task.isDone).length}/{children.length}
-            </Text>
+        <View style={styles.titleRow}>
+          {hasChildren ? (
+            <Pressable onPress={() => onToggleCollapsed(task.id)} hitSlop={8} style={styles.chevronHit}>
+              <Text style={styles.chevron}>
+                {task.isCollapsed ? '▸' : '▾'} {children.filter((child) => child.task.isDone).length}/{children.length}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.chevronHit} />
+          )}
+          <Pressable
+            onPress={() => onToggleDone(task.id)}
+            style={[styles.box, task.isDone && styles.boxDone]}
+            hitSlop={6}
+            testID={`task-done-${task.id}`}
+          >
+            {task.isDone ? <Text style={styles.check}>✓</Text> : null}
           </Pressable>
-        ) : (
-          <View style={styles.chevronHit} />
-        )}
-        <Pressable
-          onPress={() => onToggleDone(task.id)}
-          style={[styles.box, task.isDone && styles.boxDone]}
-          hitSlop={6}
-          testID={`task-done-${task.id}`}
-        >
-          {task.isDone ? <Text style={styles.check}>✓</Text> : null}
-        </Pressable>
-        <Pressable
-          onPress={() => onOpen(task.id)}
-          onLongPress={(event) => {
-            if (Platform.OS === 'web') return;
-            hold.longPress(event.nativeEvent.pageX, event.nativeEvent.pageY);
-          }}
-          delayLongPress={HOLD_DELAY}
-          onPressIn={(event) => {
-            const pageX = event.nativeEvent.pageX;
-            const pageY = event.nativeEvent.pageY;
-            if (Platform.OS === 'web') {
-              startPointerDrag(pageX, pageY);
-              return;
-            }
-            hold.pressIn(pageX, pageY);
-          }}
-          onTouchMove={(event) => {
-            if (Platform.OS === 'web') return;
-            hold.touchMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
-          }}
-          onTouchEnd={() => {
-            if (Platform.OS !== 'web') hold.touchEnd();
-          }}
-          onTouchCancel={() => {
-            if (Platform.OS !== 'web') hold.touchEnd();
-          }}
-          {...(Platform.OS === 'web'
-            ? ({
-                onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
-                  startPointerDrag(
-                    event.nativeEvent?.pageX ?? event.clientX ?? 0,
-                    event.nativeEvent?.pageY ?? event.clientY ?? 0,
-                  );
-                },
-              } as object)
-            : {})}
-          style={styles.body}
-          testID={`task-open-${task.id}`}
-        >
-          <View style={styles.bodyText}>
+          <Pressable
+            onPress={() => onOpen(task.id)}
+            onLongPress={(event) => {
+              if (Platform.OS === 'web') return;
+              hold.longPress(event.nativeEvent.pageX, event.nativeEvent.pageY);
+            }}
+            delayLongPress={HOLD_DELAY}
+            onPressIn={(event) => {
+              const pageX = event.nativeEvent.pageX;
+              const pageY = event.nativeEvent.pageY;
+              if (Platform.OS === 'web') {
+                startPointerDrag(pageX, pageY);
+                return;
+              }
+              hold.pressIn(pageX, pageY);
+            }}
+            onTouchMove={(event) => {
+              if (Platform.OS === 'web') return;
+              hold.touchMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
+            }}
+            onTouchEnd={() => {
+              if (Platform.OS !== 'web') hold.touchEnd();
+            }}
+            onTouchCancel={() => {
+              if (Platform.OS !== 'web') hold.touchEnd();
+            }}
+            {...(Platform.OS === 'web'
+              ? ({
+                  onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
+                    startPointerDrag(
+                      event.nativeEvent?.pageX ?? event.clientX ?? 0,
+                      event.nativeEvent?.pageY ?? event.clientY ?? 0,
+                    );
+                  },
+                } as object)
+              : {})}
+            style={styles.body}
+            testID={`task-open-${task.id}`}
+          >
             <View style={styles.nameRow}>
               <Text
                 style={[styles.name, depth > 0 ? styles.nameNested : styles.nameRoot, task.isDone && styles.nameDone]}
@@ -157,16 +157,18 @@ export function TaskRow({
                 <Text style={[styles.badge, datePast ? styles.badgePast : styles.badgeSoon]}>{dateBadge}</Text>
               ) : null}
             </View>
-            {task.notes ? (
-              <Text style={styles.notes} numberOfLines={2}>
-                {task.notes}
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
-        <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit} testID={`task-menu-${task.id}`}>
-          <Text style={styles.menu}>⋯</Text>
-        </Pressable>
+          </Pressable>
+          <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit} testID={`task-menu-${task.id}`}>
+            <Text style={styles.menu}>⋯</Text>
+          </Pressable>
+        </View>
+        {task.notes ? (
+          <Pressable onPress={() => onOpen(task.id)} style={styles.notesHit}>
+            <Text style={styles.notes} numberOfLines={2}>
+              {task.notes}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       {!task.isCollapsed ? (
         <View style={styles.nested}>
@@ -222,12 +224,14 @@ export function TaskRow({
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
     minHeight: 44,
     paddingRight: 8,
     paddingVertical: 4,
     borderRadius: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   nestHot: {
     backgroundColor: colors.dropPreview,
@@ -268,10 +272,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  bodyText: {
-    flex: 1,
-    paddingVertical: 2,
-  },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -300,9 +300,13 @@ const styles = StyleSheet.create({
   calGlyphOverdue: {
     color: colors.danger,
   },
-  notes: {
+  notesHit: {
+    // Match web RecursiveTask: notes sit under the title, indented past the checkbox.
+    marginLeft: 52,
     marginTop: 2,
-    marginLeft: 2,
+    paddingRight: 28,
+  },
+  notes: {
     color: colors.muted,
     fontSize: 12,
     lineHeight: 16,

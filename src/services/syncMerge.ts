@@ -34,7 +34,7 @@ export function fromFirestoreTask(id: string, data: Record<string, unknown>, own
     photoLayout: String(data.photoLayout ?? 'split-view'),
     isCollapsed: Boolean(data.isCollapsed),
     tagIDs: Array.isArray(data.tagIDs) ? data.tagIDs.map(String) : [],
-    onList: Boolean(data.onList),
+    onList: data.onList === undefined ? true : Boolean(data.onList),
     orderValue: Number(data.orderValue ?? 0),
     treeISOs: Array.isArray(data.treeISOs) ? data.treeISOs.map(String) : [],
     rootID: String(data.rootID ?? id),

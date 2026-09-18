@@ -34,8 +34,14 @@ export function SettingsScreen({
       <Text style={styles.hint}>sync {store.lastSyncReason}</Text>
       {session.isAnonymous ? (
         <Pressable style={styles.button} onPress={onLinkGoogle}>
-          <Text style={styles.buttonText}>Link Google (keeps this inbox)</Text>
+          <Text style={styles.buttonText}>Sign in with Google</Text>
         </Pressable>
+      ) : null}
+      {session.isAnonymous ? (
+        <Text style={styles.hint}>
+          New Google keeps this guest inbox. An existing Google account switches to that inbox — guest
+          demo data stays separate.
+        </Text>
       ) : null}
       <Pressable style={styles.ghost} onPress={() => void store.syncNow()}>
         <Text style={styles.ghostText}>Sync now</Text>

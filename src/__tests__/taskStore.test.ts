@@ -164,7 +164,7 @@ test('undo restores an archived subtree to the inbox', async () => {
 });
 
 test('agenda includes seeded photo blocks', async () => {
-  const { store } = await boot('agenda-user');
+  const { store } = await boot('guest-agenda');
   const today = store.agendaDays(2)[0];
   assert.equal(today.iso, todayISO());
   assert.ok(today.tasks.some((task) => task.id === 'photo-bird'));
@@ -218,9 +218,9 @@ test('drainIfPossible skips local-only guest UIDs', async () => {
 });
 
 test('create before init merges into disk and does not wipe or reseed', async () => {
-  const { repo, store: primed } = await boot('hydrate-merge');
+  const { repo, store: primed } = await boot('guest-hydrate-merge');
   const existing = await primed.create({ name: 'Already on disk' });
-  const store = new TaskTreeStore(repo, 'hydrate-merge');
+  const store = new TaskTreeStore(repo, 'guest-hydrate-merge');
   const during = await store.create({ name: 'During load', onList: true, place: 'start' });
   await store.init();
   assert.equal(store.task(during.id)?.name, 'During load');
@@ -232,9 +232,9 @@ test('create before init merges into disk and does not wipe or reseed', async ()
 test('adoptRepository keeps first-paint rows when SQLite attaches', async () => {
   const memory = new MemoryRepository();
   const disk = new MemoryRepository();
-  const store = new TaskTreeStore(memory, 'adopt-user');
+  const store = new TaskTreeStore(memory, 'guest-adopt');
   const painted = await store.create({ name: 'Painted first', place: 'start' });
-  const seeded = new TaskTreeStore(disk, 'adopt-user');
+  const seeded = new TaskTreeStore(disk, 'guest-adopt');
   await seeded.init();
   await store.adoptRepository(disk);
   assert.equal(store.task(painted.id)?.name, 'Painted first');
@@ -305,7 +305,7 @@ test('placeOnCal schedules onto a day', async () => {
 });
 
 test('nest onto a calendar block then resize duration', async () => {
-  const { store } = await boot('cal-block-kids');
+  const { store } = await boot('guest-cal-block-kids');
   const block = store.task('photo-bird');
   assert.ok(block);
   const child = await store.create({ name: 'Bring binoculars', onList: true });
@@ -316,4 +316,35 @@ test('nest onto a calendar block then resize duration', async () => {
   assert.deepEqual(names, ['Pack lunch', 'Bring binoculars']);
   await store.setDuration(block.id, 45);
   assert.equal(store.task(block.id)?.duration, 45);
+});
+
+test('switching to an existing Google uid does not copy guest demo without migrateUid', async () => {
+  const { repo, store: guest } = await boot('guest-switch-src');
+  assert.ok(guest.task('getting-started'));
+  // App.tsx account switch: new store for the Google uid, no migrateUid.
+  const google = new TaskTreeStore(repo, 'googleUidExisting');
+  await google.init();
+  assert.equal(google.task('getting-started'), undefined);
+  assert.equal(google.allTasks().length, 0);
+  assert.ok(guest.task('getting-started'));
+});
+
+test('create writes Task.js schema fields with web defaults', async () => {
+  const { store } = await boot('schema-user');
+  const task = await store.create({ name: 'Schema check', onList: true });
+  assert.equal(task.duration, 30);
+  assert.equal(task.childrenLayout, 'normal');
+  assert.equal(task.photoLayout, 'split-view');
+  assert.equal(task.isCollapsed, false);
+  assert.equal(task.templateID, '');
+  assert.equal(task.imageFullPath, '');
+  assert.equal(task.parentID, '');
+  assert.equal(task.rootID, task.id);
+  assert.deepEqual(task.tagIDs, []);
+  assert.deepEqual(task.treeISOs, []);
+  const firestore = toFirestoreTask(task);
+  assert.ok(!('pendingSync' in firestore));
+  assert.ok(!('ownerUID' in firestore));
+  assert.ok(!('isTombstone' in firestore));
+  assert.equal(firestore.photoLayout, 'split-view');
 });

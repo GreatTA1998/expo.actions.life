@@ -12,7 +12,14 @@ import {
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
-import { clipRectToWindow, edgeScrollDelta, pickBestZoneId, readWindowRect, type ZoneHit } from './geometry';
+import {
+  clipRectToWindow,
+  edgeScrollDelta,
+  pickBestZoneId,
+  readWindowRect,
+  windowToLayer,
+  type ZoneHit,
+} from './geometry';
 import { createDragGesture } from './gesture';
 
 export type DropTarget =
@@ -109,6 +116,10 @@ type ProviderProps = {
   ) => void;
 };
 
+type GhostNative = View & {
+  setNativeProps?: (props: { style?: object; transform?: object[] }) => void;
+};
+
 export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [drag, setDrag] = useState<DragSession | null>(emptySession);
   const [bestId, setBestId] = useState('');
@@ -120,9 +131,37 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const zones = useRef(new Map<string, Zone>());
   const scrollers = useRef(new Map<string, Scroller>());
   const onDropRef = useRef(onDrop);
+  const layerRef = useRef<View>(null);
+  const layerOrigin = useRef({ x: 0, y: 0 });
+  const ghostRef = useRef<GhostNative | null>(null);
+  const moveRaf = useRef(0);
+  const pendingMove = useRef<{ x: number; y: number } | null>(null);
   onDropRef.current = onDrop;
   dragRef.current = drag;
   bestRef.current = bestId;
+
+  const measureLayer = useCallback(() => {
+    const node = layerRef.current as (View & { measureInWindow?: Function }) | null;
+    const sync = readWindowRect(node);
+    if (sync) {
+      layerOrigin.current = { x: sync.x, y: sync.y };
+      return;
+    }
+    node?.measureInWindow?.((x: number, y: number) => {
+      layerOrigin.current = { x, y };
+    });
+  }, []);
+
+  const paintGhost = useCallback((session: DragSession) => {
+    const local = windowToLayer(session.x, session.y, layerOrigin.current);
+    ghostRef.current?.setNativeProps?.({
+      style: {
+        width: session.width,
+        height: session.height,
+        transform: [{ translateX: local.x }, { translateY: local.y }],
+      },
+    });
+  }, []);
 
   const refreshZones = useCallback(() => {
     for (const zone of zones.current.values()) {
@@ -174,10 +213,17 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     }
   }, []);
 
+  const publishDrag = useCallback((session: DragSession | null) => {
+    dragRef.current = session;
+    setDrag(session);
+    if (session?.active) paintGhost(session);
+  }, [paintGhost]);
+
   const armDrag = useCallback(
     (task: TaskRecord, origin: DragOrigin, pageX: number, pageY: number, rect: Rect, token?: number) => {
       if (token != null && !gesture.live(token)) return;
       if (token == null && Platform.OS !== 'web' && !pendingActivate.current) return;
+      measureLayer();
       const session: DragSession = {
         id: task.id,
         name: task.name,
@@ -193,8 +239,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         offsetY: pageY - rect.y,
       };
       pendingActivate.current = false;
-      dragRef.current = session;
-      setDrag(session);
+      publishDrag(session);
       if (session.active) {
         lockScrollers(false);
         setPointerLocked(true);
@@ -202,7 +247,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         pickZone(session);
       }
     },
-    [gesture, lockScrollers, pickZone, refreshZones],
+    [gesture, lockScrollers, measureLayer, pickZone, publishDrag, refreshZones],
   );
 
   const activateDrag = useCallback(
@@ -214,18 +259,40 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       pendingActivate.current = true;
       lockScrollers(false);
       setPointerLocked(true);
+      measureLayer();
       const session = dragRef.current;
       if (!session) return token;
       if (session.active) return token;
       const next = { ...session, active: true };
-      dragRef.current = next;
-      setDrag(next);
+      publishDrag(next);
       refreshZones();
       pickZone(next);
       return token;
     },
-    [gesture, lockScrollers, pickZone, refreshZones],
+    [gesture, lockScrollers, measureLayer, pickZone, publishDrag, refreshZones],
   );
+
+  const flushMove = useCallback(() => {
+    moveRaf.current = 0;
+    const pending = pendingMove.current;
+    pendingMove.current = null;
+    if (!pending) return;
+    const current = dragRef.current;
+    if (!current?.active) return;
+    const next: DragSession = {
+      ...current,
+      pointerX: pending.x,
+      pointerY: pending.y,
+      x: pending.x - current.offsetX,
+      y: pending.y - current.offsetY,
+    };
+    dragRef.current = next;
+    paintGhost(next);
+    // One React publish per frame keeps calendar live-preview in sync without
+    // re-rendering every touch sample.
+    setDrag(next);
+    pickZone(next);
+  }, [paintGhost, pickZone]);
 
   const moveDrag = useCallback(
     (pageX: number, pageY: number) => {
@@ -250,22 +317,29 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       }
       const current = dragRef.current;
       if (!current?.active) return;
-      const next: DragSession = {
+      pendingMove.current = { x: pageX, y: pageY };
+      // Paint immediately from the latest sample so the ghost tracks the finger.
+      paintGhost({
         ...current,
         pointerX: pageX,
         pointerY: pageY,
         x: pageX - current.offsetX,
         y: pageY - current.offsetY,
-      };
-      dragRef.current = next;
-      setDrag(next);
-      pickZone(next);
+      });
+      if (!moveRaf.current) {
+        moveRaf.current = requestAnimationFrame(flushMove);
+      }
     },
-    [activateDrag, lockScrollers, pickZone],
+    [activateDrag, flushMove, lockScrollers, paintGhost],
   );
 
   const cancelDrag = useCallback(() => {
     gesture.cancel();
+    if (moveRaf.current) {
+      cancelAnimationFrame(moveRaf.current);
+      moveRaf.current = 0;
+    }
+    pendingMove.current = null;
     dragRef.current = null;
     bestRef.current = '';
     pendingActivate.current = false;
@@ -276,6 +350,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, [gesture, lockScrollers]);
 
   const endDrag = useCallback(() => {
+    if (moveRaf.current) {
+      cancelAnimationFrame(moveRaf.current);
+      moveRaf.current = 0;
+      flushMove();
+    }
     const session = dragRef.current;
     const zoneId = bestRef.current;
     if (session?.active && zoneId) {
@@ -291,7 +370,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       }
     }
     cancelDrag();
-  }, [cancelDrag]);
+  }, [cancelDrag, flushMove]);
 
   const registerZone = useCallback((zone: Omit<Zone, 'rect'>) => {
     zones.current.set(zone.id, { ...zone, rect: null });
@@ -409,11 +488,15 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   );
 
   const nativeHolding = () => Platform.OS !== 'web' && (pendingActivate.current || !!dragRef.current?.active);
+  const ghostLocal = drag?.active ? windowToLayer(drag.x, drag.y, layerOrigin.current) : null;
 
   return (
     <DragContext.Provider value={value}>
       <View
+        ref={layerRef}
+        collapsable={false}
         style={styles.fill}
+        onLayout={measureLayer}
         onStartShouldSetResponderCapture={nativeHolding}
         onMoveShouldSetResponderCapture={nativeHolding}
         onResponderTerminationRequest={() => !nativeHolding()}
@@ -432,11 +515,19 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         }}
       >
         {children}
-        {drag?.active ? (
+        {drag?.active && ghostLocal ? (
           <View
+            ref={ghostRef}
             testID="drag-ghost"
             pointerEvents="none"
-            style={[styles.ghost, { width: drag.width, height: drag.height, transform: [{ translateX: drag.x }, { translateY: drag.y }] }]}
+            style={[
+              styles.ghost,
+              {
+                width: drag.width,
+                height: drag.height,
+                transform: [{ translateX: ghostLocal.x }, { translateY: ghostLocal.y }],
+              },
+            ]}
           >
             <Text testID="drop-best" numberOfLines={1} style={styles.ghostMeta}>
               {bestId}

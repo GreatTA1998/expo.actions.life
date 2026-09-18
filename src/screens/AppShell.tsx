@@ -37,8 +37,9 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   async function linkGoogle() {
     try {
       try {
+        // App boots a store for the new uid and syncs there. Do not sync the
+        // outgoing guest store after Auth has switched accounts.
         onSession(await signInWithGoogleNative(session));
-        void store.syncNow();
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -53,7 +54,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
           : result.authentication?.idToken;
       if (!idToken) throw new Error('Google returned no ID token.');
       onSession(await finishGoogleAuthSession(idToken, session));
-      void store.syncNow();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setTab('settings');

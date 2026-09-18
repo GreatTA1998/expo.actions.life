@@ -8,6 +8,7 @@ import {
   pickBestZoneId,
   readWindowRect,
   snapDuration,
+  windowToLayer,
   zoneSelector,
 } from '../components/drag/geometry';
 
@@ -63,4 +64,9 @@ test('durationFromPointerDelta matches web DurationAdjuster math', () => {
   assert.equal(durationFromPointerDelta(30, -50, 50), 15);
   assert.equal(snapDuration(37, 15), 30);
   assert.equal(snapDuration(38, 15), 45);
+});
+
+test('windowToLayer subtracts the ghost host origin from window coords', () => {
+  assert.deepEqual(windowToLayer(120, 240, { x: 0, y: 96 }), { x: 120, y: 144 });
+  assert.deepEqual(windowToLayer(40, 80, { x: 12, y: 20 }), { x: 28, y: 60 });
 });

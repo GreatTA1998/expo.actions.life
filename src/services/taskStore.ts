@@ -18,6 +18,7 @@ import {
 } from '../tree/treeMaintenance';
 import { peekFirebase } from './firebase';
 import { insertGuestSeed } from './seed';
+import { isLocalOnlyUid } from './syncMerge';
 import { SyncEngine } from './syncEngine';
 
 export type CreateTaskInput = {
@@ -30,9 +31,14 @@ export type CreateTaskInput = {
   notes?: string;
   id?: string;
   childrenLayout?: string;
+  photoLayout?: string;
   isDone?: boolean;
+  isCollapsed?: boolean;
   imageDownloadURL?: string;
+  imageFullPath?: string;
   iconURL?: string;
+  templateID?: string;
+  timeZone?: string;
   tagIDs?: string[];
   /** Root inbox rows go above the fold when set to `start`. */
   place?: 'start' | 'end';
@@ -94,7 +100,9 @@ export class TaskTreeStore {
     this.reloadViews();
     this.notify();
     this.writeThrough = true;
-    if (!this.profile.didSeed && this.records.length === 0) {
+    // Demo seed is guest-only (web seeds only new anonymous users). Never insert
+    // TO-DO / Visa into a Google/Apple Firebase uid — that polluted linked accounts.
+    if (!this.profile.didSeed && this.records.length === 0 && isLocalOnlyUid(this.uid)) {
       await insertGuestSeed(this);
       this.profile = { ...this.profile, didSeed: true, updatedAt: Date.now() };
       await this.repo.saveProfile(this.profile);
@@ -201,9 +209,14 @@ export class TaskTreeStore {
       startDateISO,
       notes: input.notes ?? '',
       isDone: input.isDone ?? false,
+      isCollapsed: input.isCollapsed ?? false,
       imageDownloadURL: input.imageDownloadURL ?? '',
+      imageFullPath: input.imageFullPath ?? '',
       iconURL: input.iconURL ?? '',
+      templateID: input.templateID ?? '',
+      timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       childrenLayout: input.childrenLayout ?? 'normal',
+      photoLayout: input.photoLayout ?? 'split-view',
       onList: input.onList ?? true,
       orderValue: order,
       treeISOs,
