@@ -50,11 +50,13 @@ export function TaskRow({
     });
   }, [nestId, registerZone, task.id]);
 
-  function startPointerDrag(pageX: number, pageY: number) {
+  function startPointerDrag(pageX: number, pageY: number, activate = false) {
+    if (activate) activateDrag();
     measureNode(
       rowRef.current,
       (rect) => {
         armDrag(task, 'list', pageX, pageY, rect);
+        if (activate) activateDrag();
       },
       `task-row-${task.id}`,
     );
@@ -100,8 +102,7 @@ export function TaskRow({
         <Pressable
           onPress={() => onOpen(task.id)}
           onLongPress={(event) => {
-            startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY);
-            activateDrag();
+            startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY, true);
           }}
           delayLongPress={HOLD_DELAY}
           onPressIn={(event) => {

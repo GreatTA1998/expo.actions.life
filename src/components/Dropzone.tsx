@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { matchHabitTemplates } from '../services/seed';
 import { colors, type } from '../theme';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
@@ -30,6 +30,7 @@ export function Dropzone({
   const { registerZone, bestId, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
   const picking = useRef(false);
+  const committed = useRef(false);
   const [draft, setDraft] = useState('');
   const root = depth === 0;
   const highlighted = bestId === zoneId;
@@ -44,10 +45,16 @@ export function Dropzone({
   }, [index, parentID, registerZone, zoneId]);
 
   useEffect(() => {
-    if (!composing) setDraft('');
+    if (!composing) {
+      committed.current = false;
+      setDraft('');
+    }
   }, [composing]);
 
   function commit(name: string, extras?: CreateExtras) {
+    if (committed.current) return;
+    committed.current = true;
+    picking.current = false;
     if (name) onSubmit(name, extras);
     else onCancel();
   }
@@ -105,10 +112,12 @@ export function Dropzone({
                   }}
                   onPress={() => {
                     commit(habit.name, { duration: habit.duration });
-                    picking.current = false;
                   }}
                   style={styles.menuItem}
                 >
+                  {habit.iconURL ? (
+                    <Image source={{ uri: habit.iconURL }} style={styles.menuIcon} />
+                  ) : null}
                   <Text style={styles.menuText}>{habit.name}</Text>
                 </Pressable>
               ))}
@@ -147,7 +156,6 @@ const styles = StyleSheet.create({
     borderColor: colors.dropBorder,
   },
   composing: {
-    minHeight: 36,
     borderWidth: 2,
     borderColor: colors.composer,
     backgroundColor: colors.card,
@@ -168,8 +176,8 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
     color: colors.ink,
   },
   inputRoot: {
@@ -195,9 +203,16 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 10,
+  },
+  menuIcon: {
+    width: 24,
+    height: 24,
   },
   menuText: {
     color: colors.ink,

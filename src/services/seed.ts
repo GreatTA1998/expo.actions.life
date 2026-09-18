@@ -1,11 +1,22 @@
 import { addDaysISO, addMonthsISO, nowHM, todayISO } from '../dates';
 import type { TaskTreeStore } from './taskStore';
 
+const ICON = {
+  waterPlant:
+    'https://firebasestorage.googleapis.com/v0/b/project-y-2a061.appspot.com/o/icons%2FEPtvgSIsPkpznSIffOoa.png?alt=media&token=018a960d-1f76-47eb-a0fe-85c6a5423bd9',
+  drinkWater:
+    'https://firebasestorage.googleapis.com/v0/b/project-y-2a061.appspot.com/o/icons%2F6w6I9VRWZLRWqphuLgFz.png?alt=media&token=ba68dd3b-83fe-4ed2-bc38-9a2888d31f1b',
+  meditate:
+    'https://firebasestorage.googleapis.com/v0/b/project-y-2a061.appspot.com/o/icons%2FhsCFkECSF4PcFt6MOcW0.png?alt=media&token=d4ed8987-9001-43bc-b48b-4f36caef6fb1',
+  laundry:
+    'https://firebasestorage.googleapis.com/v0/b/project-y-2a061.appspot.com/o/icons%2Fk49WsIjV1kQ2e6MW52BR.png?alt=media&token=0d44da5b-dfd7-4ff3-9971-3637b748c6be',
+};
+
 export const HABIT_TEMPLATES = [
-  { id: 'template-habit-water', name: 'Water the plant', duration: 15, rr: 'Weekly on Wednesday' },
-  { id: 'template-habit-drink', name: 'Drink water', duration: 1, rr: 'Every day' },
-  { id: 'template-habit-meditate', name: 'Meditate', duration: 15, rr: 'Every day' },
-  { id: 'template-habit-laundry', name: 'Dry laundry', duration: 10, rr: 'Weekly on Sunday' },
+  { id: 'template-habit-water', name: 'Water the plant', duration: 15, rr: 'Weekly on Wednesday', iconURL: ICON.waterPlant },
+  { id: 'template-habit-drink', name: 'Drink water', duration: 1, rr: 'Every day', iconURL: ICON.drinkWater },
+  { id: 'template-habit-meditate', name: 'Meditate', duration: 15, rr: 'Every day', iconURL: ICON.meditate },
+  { id: 'template-habit-laundry', name: 'Dry laundry', duration: 10, rr: 'Weekly on Sunday', iconURL: ICON.laundry },
 ] as const;
 
 export function matchHabitTemplates(query: string) {

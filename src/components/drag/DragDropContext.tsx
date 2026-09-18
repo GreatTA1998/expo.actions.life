@@ -111,6 +111,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [bestId, setBestId] = useState('');
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
+  const pendingActivate = useRef(false);
   const zones = useRef(new Map<string, Zone>());
   const scrollers = useRef(new Map<string, Scroller>());
   const onDropRef = useRef(onDrop);
@@ -168,7 +169,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         id: task.id,
         name: task.name,
         origin,
-        active: false,
+        active: pendingActivate.current,
         pointerX: pageX,
         pointerY: pageY,
         x: rect.x,
@@ -178,15 +179,24 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         offsetX: pageX - rect.x,
         offsetY: pageY - rect.y,
       };
+      pendingActivate.current = false;
       dragRef.current = session;
       setDrag(session);
+      if (session.active) {
+        refreshZones();
+        pickZone(session);
+      }
     },
-    [],
+    [pickZone, refreshZones],
   );
 
   const activateDrag = useCallback(() => {
     const session = dragRef.current;
-    if (!session || session.active) return;
+    if (!session) {
+      pendingActivate.current = true;
+      return;
+    }
+    if (session.active) return;
     const next = { ...session, active: true };
     dragRef.current = next;
     setDrag(next);
@@ -231,6 +241,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const cancelDrag = useCallback(() => {
     dragRef.current = null;
     bestRef.current = '';
+    pendingActivate.current = false;
     setDrag(null);
     setBestId('');
   }, []);

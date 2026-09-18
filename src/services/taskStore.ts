@@ -293,8 +293,9 @@ export class TaskTreeStore {
     await this.persist();
   }
 
-  async nest(id: string, underParentID: string): Promise<void> {
-    await this.placeOnList(id, { parentID: underParentID, index: 0 });
+  async nest(id: string, underParentID: string, index?: number): Promise<void> {
+    const rooms = this.siblingsOnList(underParentID).filter((doc) => doc.id !== id);
+    await this.placeOnList(id, { parentID: underParentID, index: index ?? rooms.length });
   }
 
   /**
@@ -366,7 +367,9 @@ export class TaskTreeStore {
     const currentParent = parentIDOf(id, this.records);
     if (!currentParent) return false;
     const grandparent = parentIDOf(currentParent, this.records) ?? '';
-    await this.nest(id, grandparent);
+    const rooms = this.siblingsOnList(grandparent).filter((doc) => doc.id !== id);
+    const parentIndex = rooms.findIndex((doc) => doc.id === currentParent);
+    await this.nest(id, grandparent, parentIndex < 0 ? rooms.length : parentIndex + 1);
     return true;
   }
 
@@ -478,7 +481,7 @@ export class TaskTreeStore {
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
 
   async setListHeightSplit(value: number): Promise<void> {
-    this.listHeightSplit = Math.min(0.85, Math.max(0.25, value));
+    this.listHeightSplit = Math.min(0.85, Math.max(0.2, value));
     this.profile = { ...this.profile, listHeightSplit: this.listHeightSplit, updatedAt: Date.now() };
     this.notify();
     if (this.splitTimer) clearTimeout(this.splitTimer);

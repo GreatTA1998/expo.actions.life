@@ -186,6 +186,30 @@ test('indent nests a task under its previous sibling', async () => {
   assert.equal(refused, false);
 });
 
+test('indent becomes the last child; outdent lands after the former parent', async () => {
+  const { store } = await boot('indent-order');
+  const root = await store.create({ name: 'Root' });
+  const first = await store.create({ name: 'First', parentID: root.id, onList: true });
+  const second = await store.create({ name: 'Second', parentID: root.id, onList: true });
+  const third = await store.create({ name: 'Third', parentID: root.id, onList: true });
+  await store.addSubtask(first.id, 'Existing child');
+  await store.indent(second.id);
+  const firstKids = store.inbox
+    .find((node) => node.task.id === root.id)
+    ?.children.find((node) => node.task.id === first.id)
+    ?.children.map((node) => node.task.name);
+  assert.deepEqual(firstKids, ['Existing child', 'Second']);
+
+  await store.outdent(second.id);
+  const rootKids = store.inbox
+    .find((node) => node.task.id === root.id)
+    ?.children.map((node) => node.task.name);
+  assert.deepEqual(rootKids, ['First', 'Second', 'Third']);
+  assert.equal(store.task(second.id)?.parentID, root.id);
+  assert.ok(store.task(second.id)!.orderValue > store.task(first.id)!.orderValue);
+  assert.ok(store.task(second.id)!.orderValue < store.task(third.id)!.orderValue);
+});
+
 test('drainIfPossible skips local-only guest UIDs', async () => {
   const { store } = await boot('guest-offline');
   const result = await store.syncNow();

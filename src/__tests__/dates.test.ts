@@ -4,8 +4,10 @@ import {
   addDaysISO,
   addMonthsISO,
   calendarFocusMinutes,
+  calendarJumpToNowY,
   calendarScrollOffset,
   dayWindow,
+  habitDueOn,
   parseMinutes,
   relativeDateChip,
   todayISO,
@@ -40,6 +42,18 @@ test('matchHabitTemplates opens after the first character', () => {
   assert.equal(matchHabitTemplates('').length, 0);
   assert.ok(matchHabitTemplates('w').some((habit) => habit.name === 'Water the plant'));
   assert.ok(matchHabitTemplates('med').some((habit) => habit.name === 'Meditate'));
+});
+
+test('calendarJumpToNowY is the current hour minus 48px', () => {
+  assert.equal(calendarJumpToNowY('09:00', 50, 48), 9 * 50 - 48);
+  assert.equal(calendarJumpToNowY('00:20', 50, 48), 0);
+});
+
+test('habitDueOn matches the web seed rrule labels', () => {
+  assert.equal(habitDueOn('2026-09-18', 'Every day'), true);
+  assert.equal(habitDueOn('2026-09-18', 'Weekly on Wednesday'), false);
+  assert.equal(habitDueOn('2026-09-16', 'Weekly on Wednesday'), true);
+  assert.equal(habitDueOn('2026-09-20', 'Weekly on Sunday'), true);
 });
 
 test('dayWindow is a partial-infinite range around today', () => {

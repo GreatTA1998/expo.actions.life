@@ -93,6 +93,19 @@ export function calendarScrollOffset(
   return Math.max(0, ((topMinutes - startHour * 60) / 60) * pxPerHour - 8);
 }
 
+/** Web jumpToToday: current hour − 48px headroom. */
+export function calendarJumpToNowY(now = nowHM(), pxPerHour = 50, headroom = 48): number {
+  return Math.max(0, (parseMinutes(now) / 60) * pxPerHour - headroom);
+}
+
+export function habitDueOn(iso: string, rr: string): boolean {
+  const dow = new Date(`${iso}T00:00:00`).getDay();
+  if (rr === 'Every day') return true;
+  if (rr.includes('Wednesday')) return dow === 3;
+  if (rr.includes('Sunday')) return dow === 0;
+  return false;
+}
+
 export function formatMinutes(total: number): string {
   const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
   const h = Math.floor(clamped / 60);

@@ -14,7 +14,6 @@ type Props = {
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
   onCreate: (slot: { parentID: string; index: number }, name: string, extras?: { duration?: number }) => void;
-  revealTopToken?: number;
 };
 
 export function Inbox({
@@ -24,7 +23,6 @@ export function Inbox({
   onOpen,
   onMenu,
   onCreate,
-  revealTopToken,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const wrapRef = useRef<View>(null);
@@ -32,11 +30,6 @@ export function Inbox({
   const viewport = useRef<Rect | null>(null);
   const [composer, setComposer] = useState<ComposerSlot>(null);
   const { registerScroller, refreshZones, drag } = useDragDrop();
-
-  useEffect(() => {
-    if (!revealTopToken) return;
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [revealTopToken]);
 
   useEffect(() => {
     return registerScroller({

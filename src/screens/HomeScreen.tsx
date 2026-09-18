@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Inbox } from '../components/Inbox';
 import { DayCalendar } from '../components/DayCalendar';
@@ -16,7 +16,6 @@ type Props = {
 };
 
 export function HomeScreen({ store, onOpen, onMenu }: Props) {
-  const [revealTopToken, setRevealTopToken] = useState(0);
   const today = todayISO();
   const tasksByDay = useMemo(() => {
     const map = new Map<string, TaskRecord[]>();
@@ -126,19 +125,14 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
               onOpen={onOpen}
               onMenu={onMenu}
               onCreate={(slot, name, extras) => {
-                void store
-                  .create({
-                    name,
-                    parentID: slot.parentID || undefined,
-                    onList: true,
-                    index: slot.index,
-                    duration: extras?.duration,
-                  })
-                  .then(() => {
-                    if (!slot.parentID) setRevealTopToken((value) => value + 1);
-                  });
+                void store.create({
+                  name,
+                  parentID: slot.parentID || undefined,
+                  onList: true,
+                  index: slot.index,
+                  duration: extras?.duration,
+                });
               }}
-              revealTopToken={revealTopToken}
             />
           }
         />
