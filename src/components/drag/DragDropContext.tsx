@@ -16,8 +16,8 @@ import { clipRectToWindow, edgeScrollDelta, readWindowRect } from './geometry';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
-  | { kind: 'nest'; parentID: string }
-  | { kind: 'cal'; iso: string };
+  | { kind: 'nest'; parentID: string; at: 'first' | 'last' }
+  | { kind: 'cal'; iso: string; allDay?: boolean };
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
@@ -77,7 +77,7 @@ const DragContext = createContext<DragContextValue | null>(null);
 const HOLD_MS = 150;
 const MOUSE_SLOP = 2;
 const TOUCH_SLOP = 5;
-const PROBE_H = 8;
+const PROBE_H = 2;
 const EDGE = 44;
 const SCROLL_PX = 16;
 
@@ -135,10 +135,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const pickZone = useCallback((session: DragSession) => {
     const win = Dimensions.get('window');
     const probe = {
-      left: session.pointerX - 4,
-      top: session.pointerY - PROBE_H / 2,
-      right: session.pointerX + 4,
-      bottom: session.pointerY + PROBE_H / 2,
+      left: session.x,
+      top: session.y,
+      right: session.x + Math.max(session.width, 8),
+      bottom: session.y + PROBE_H,
     };
     let best = '';
     let max = 0;
@@ -247,7 +247,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
           session.id,
           session.origin,
           zone.target,
-          { x: session.pointerX, y: session.pointerY },
+          { x: session.pointerX, y: session.y },
           zone.rect,
         );
       }

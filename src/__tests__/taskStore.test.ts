@@ -262,6 +262,15 @@ test('placeOnList nests, reorders, and unschedules from calendar', async () => {
   assert.equal(kids?.[0], 'Sibling');
 });
 
+test('placeOnCal all-day leaves startTime empty', async () => {
+  const { store } = await boot('place-on-cal-all-day');
+  const task = await store.create({ name: 'All day', onList: true });
+  await store.placeOnCal(task.id, todayISO(), '');
+  assert.equal(store.task(task.id)?.startDateISO, todayISO());
+  assert.equal(store.task(task.id)?.startTime, '');
+  assert.equal(store.task(task.id)?.onList, true);
+});
+
 test('placeOnCal schedules onto a day', async () => {
   const { store } = await boot('place-on-cal');
   const task = await store.create({ name: 'Drag me', onList: true });
@@ -276,8 +285,11 @@ test('nest onto a calendar block then resize duration', async () => {
   const block = store.task('photo-bird');
   assert.ok(block);
   const child = await store.create({ name: 'Bring binoculars', onList: true });
-  await store.placeOnList(child.id, { parentID: block.id, index: 0 });
-  assert.equal(store.childrenOf(block.id)[0]?.task.name, 'Bring binoculars');
+  const first = await store.create({ name: 'Pack lunch', onList: true });
+  await store.placeOnList(first.id, { parentID: block.id, index: 0 });
+  await store.placeOnList(child.id, { parentID: block.id, index: store.childrenOf(block.id).length });
+  const names = store.childrenOf(block.id).map((node) => node.task.name);
+  assert.deepEqual(names, ['Pack lunch', 'Bring binoculars']);
   await store.setDuration(block.id, 45);
   assert.equal(store.task(block.id)?.duration, 45);
 });

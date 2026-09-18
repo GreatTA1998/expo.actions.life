@@ -6,7 +6,6 @@ import {
   dayNumber,
   dayWindow,
   formatMinutes,
-  monthYearLabel,
   parseMinutes,
   snapMinutes,
   weekdayShort,
@@ -157,7 +156,7 @@ export function DayCalendar({
       }}
     >
       <Text style={styles.month} testID="calendar-month">
-        {monthYearLabel(centerISO)}
+        {Number(centerISO.slice(5, 7))}
       </Text>
       <ScrollView
         ref={headerScrollRef}
@@ -167,16 +166,9 @@ export function DayCalendar({
         style={styles.headerScroll}
       >
         <View style={{ width: TIME_AXIS }} />
-        {days.map((iso) => {
-          const isToday = iso === todayISO;
-          return (
-            <View key={`h-${iso}`} style={[styles.dayHead, { width: columnWidth }]}>
-              <Text style={[styles.dow, isToday && styles.dowToday]}>
-                {`${weekdayShort(iso)} ${dayNumber(iso)}`}
-              </Text>
-            </View>
-          );
-        })}
+        {days.map((iso) => (
+          <DayHead key={`h-${iso}`} iso={iso} width={columnWidth} isToday={iso === todayISO} />
+        ))}
       </ScrollView>
       <View
         ref={hourWrapRef}
@@ -251,6 +243,36 @@ export function DayCalendar({
         </View>
       </ScrollView>
       </View>
+    </View>
+  );
+}
+
+function DayHead({ iso, width, isToday }: { iso: string; width: number; isToday: boolean }) {
+  const { registerZone, bestId, refreshZones } = useDragDrop();
+  const ref = useRef<View>(null);
+  const zoneId = `cal-head-${iso}`;
+  const highlighted = bestId === zoneId;
+
+  useEffect(() => {
+    return registerZone({
+      id: zoneId,
+      target: { kind: 'cal', iso, allDay: true },
+      ref,
+    });
+  }, [iso, registerZone, zoneId]);
+
+  return (
+    <View
+      ref={ref}
+      collapsable={false}
+      nativeID={zoneId}
+      testID={`day-head-${iso}`}
+      onLayout={() => refreshZones()}
+      style={[styles.dayHead, { width }, highlighted && styles.columnHot]}
+    >
+      <Text style={[styles.dow, isToday && styles.dowToday]}>
+        {`${weekdayShort(iso)} ${dayNumber(iso)}`}
+      </Text>
     </View>
   );
 }
@@ -390,7 +412,7 @@ function CalBlock({
   useEffect(() => {
     return registerZone({
       id: nestId,
-      target: { kind: 'nest', parentID: task.id },
+      target: { kind: 'nest', parentID: task.id, at: 'last' },
       ref,
       ownerTaskId: task.id,
     });

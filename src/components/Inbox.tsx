@@ -81,7 +81,7 @@ export function Inbox({
               onCompose={() => setComposer({ parentID: '', index: i })}
               onSubmit={(name) => {
                 onCreate({ parentID: '', index: i }, name);
-                setComposer(null);
+                setComposer({ parentID: '', index: i + 1 });
               }}
               onCancel={() => setComposer(null)}
             />
@@ -92,7 +92,7 @@ export function Inbox({
               onCompose={setComposer}
               onCreate={(slot, name) => {
                 onCreate(slot, name);
-                setComposer(null);
+                setComposer({ parentID: slot.parentID, index: slot.index + 1 });
               }}
               onToggleDone={onToggleDone}
               onToggleCollapsed={onToggleCollapsed}
@@ -110,7 +110,7 @@ export function Inbox({
           onCompose={() => setComposer({ parentID: '', index: forest.length })}
           onSubmit={(name) => {
             onCreate({ parentID: '', index: forest.length }, name);
-            setComposer(null);
+            setComposer({ parentID: '', index: forest.length + 1 });
           }}
           onCancel={() => setComposer(null)}
         />

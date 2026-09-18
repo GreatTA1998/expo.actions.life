@@ -28,6 +28,7 @@ test('edgeScrollDelta scrolls only when the pointer is on that scroller edge', (
 });
 
 test('zoneSelector maps drop ids to rendered test ids', () => {
+  assert.match(zoneSelector('cal-head-2026-09-19'), /day-head-2026-09-19/);
   assert.match(zoneSelector('cal-2026-09-18'), /day-column-2026-09-18/);
   assert.match(zoneSelector('nest-cal-photo-bird'), /cal-block-photo-bird/);
   assert.match(zoneSelector('nest-todo-drag'), /task-row-todo-drag/);

@@ -42,7 +42,7 @@ export function TaskRow({
   useEffect(() => {
     return registerZone({
       id: nestId,
-      target: { kind: 'nest', parentID: task.id },
+      target: { kind: 'nest', parentID: task.id, at: 'first' },
       ref: rowRef,
       ownerTaskId: task.id,
     });
@@ -66,11 +66,23 @@ export function TaskRow({
         nativeID={`nest-${task.id}`}
         testID={`task-row-${task.id}`}
         onLayout={() => refreshZones()}
+        {...(Platform.OS === 'web'
+          ? ({
+              onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
+                startPointerDrag(
+                  event.nativeEvent?.pageX ?? event.clientX ?? 0,
+                  event.nativeEvent?.pageY ?? event.clientY ?? 0,
+                );
+              },
+            } as object)
+          : {})}
         style={[styles.row, { paddingLeft: 12 + depth * 18 }, highlighted && styles.nestHot]}
       >
         {hasChildren ? (
           <Pressable onPress={() => onToggleCollapsed(task.id)} hitSlop={8} style={styles.chevronHit}>
-            <Text style={styles.chevron}>{task.isCollapsed ? '▸' : '▾'}</Text>
+            <Text style={styles.chevron}>
+              {task.isCollapsed ? '▸' : '▾'} {children.filter((child) => child.task.isDone).length}/{children.length}
+            </Text>
           </Pressable>
         ) : (
           <View style={styles.chevronHit} />
@@ -113,6 +125,7 @@ export function TaskRow({
               <Text style={[styles.name, task.isDone && styles.nameDone]} numberOfLines={2}>
                 {task.name || 'Untitled'}
               </Text>
+              {task.startDateISO ? <Text style={styles.calGlyph}>▦</Text> : null}
               {dateBadge ? <Text style={styles.badge}>{dateBadge}</Text> : null}
             </View>
             {task.notes ? (
@@ -185,7 +198,8 @@ const styles = StyleSheet.create({
     borderColor: colors.dropBorder,
   },
   chevronHit: {
-    width: 22,
+    minWidth: 22,
+    paddingRight: 4,
     alignItems: 'center',
   },
   chevron: {
@@ -195,7 +209,7 @@ const styles = StyleSheet.create({
   box: {
     width: 20,
     height: 20,
-    borderRadius: 5,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.ink,
     alignItems: 'center',
@@ -233,6 +247,10 @@ const styles = StyleSheet.create({
   nameDone: {
     color: colors.done,
     textDecorationLine: 'line-through',
+  },
+  calGlyph: {
+    color: colors.accent,
+    fontSize: 11,
   },
   notes: {
     marginTop: 2,

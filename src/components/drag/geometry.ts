@@ -76,6 +76,9 @@ function escapeId(id: string): string {
 }
 
 export function zoneSelector(zoneId: string): string {
+  if (zoneId.startsWith('cal-head-')) {
+    return `[data-testid="day-head-${zoneId.slice(9)}"], [data-nativeid="${zoneId}"]`;
+  }
   if (zoneId.startsWith('cal-') && !zoneId.startsWith('cal-block') && !zoneId.startsWith('cal-resize')) {
     return `[data-testid="day-column-${zoneId.slice(4)}"], [data-nativeid="${zoneId}"], #${escapeId(zoneId)}`;
   }

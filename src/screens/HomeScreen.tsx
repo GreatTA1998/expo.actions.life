@@ -54,11 +54,16 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
         return;
       }
       if (target.kind === 'nest') {
+        const rooms = store.childrenOf(target.parentID);
         void store.placeOnList(taskId, {
           parentID: target.parentID,
-          index: 0,
-          unschedule: origin !== 'list',
+          index: target.at === 'last' ? rooms.length : 0,
+          unschedule: target.at === 'last' || origin !== 'list',
         });
+        return;
+      }
+      if (target.allDay) {
+        void store.placeOnCal(taskId, target.iso, '', origin === 'nested-cal');
         return;
       }
       const px = store.profile.pixelsPerHour || 50;
