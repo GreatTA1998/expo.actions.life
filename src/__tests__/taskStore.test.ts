@@ -4,7 +4,7 @@ import { MemoryRepository } from '../persistence/memoryRepository';
 import { migrateUid } from '../persistence/migrate';
 import { restoreAnonymousGuestSession } from '../persistence/guestSession';
 import { TaskTreeStore } from '../services/taskStore';
-import { mergeRemoteTasks, toFirestoreTask } from '../services/syncMerge';
+import { mergeRemoteTasks, toFirestoreProfile, toFirestoreTask } from '../services/syncMerge';
 import { defaultTask } from '../models/types';
 import { todayISO } from '../dates';
 
@@ -184,6 +184,35 @@ test('indent nests a task under its previous sibling', async () => {
   assert.equal(store.task(second.id)?.parentID, first.id);
   const refused = await store.indent(first.id);
   assert.equal(refused, false);
+});
+
+test('toFirestoreProfile omits empty email so merge cannot wipe a real account', () => {
+  const payload = toFirestoreProfile({
+    uid: 'yGVJSutBrnS1156uopQQOBuwpMl2',
+    email: '',
+    maxOrderValue: 10,
+    calendarTheme: 'mutedEarth',
+    fontScale: 0.75,
+    defaultPhotoLayout: 'split-view',
+    calSnapInterval: 1,
+    listAreaWidthRatio: 0.00223,
+    listAreaHeightRatio: 0.004,
+    listWidthSplit: 0.5,
+    listHeightSplit: 0.5,
+    simpleMode: false,
+    photoUploadAutoArchive: false,
+    photoCompressWhenAttachingToTask: true,
+    hideRoutines: true,
+    lastRanRoutines: '',
+    nickname: '',
+    avatarFilter: '',
+    tags: {},
+    pixelsPerHour: 50,
+    calColumnWidth: 160,
+  });
+  assert.equal('email' in payload, false);
+  const withEmail = toFirestoreProfile({ ...payload, email: 'elton@actions.life' });
+  assert.equal(withEmail.email, 'elton@actions.life');
 });
 
 test('drainIfPossible skips local-only guest UIDs', async () => {
