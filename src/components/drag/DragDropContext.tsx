@@ -216,8 +216,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const publishDrag = useCallback((session: DragSession | null) => {
     dragRef.current = session;
     setDrag(session);
-    if (session?.active) paintGhost(session);
-  }, [paintGhost]);
+  }, []);
 
   const armDrag = useCallback(
     (task: TaskRecord, origin: DragOrigin, pageX: number, pageY: number, rect: Rect, token?: number) => {
@@ -287,12 +286,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       y: pending.y - current.offsetY,
     };
     dragRef.current = next;
-    paintGhost(next);
     // One React publish per frame keeps calendar live-preview in sync without
     // re-rendering every touch sample.
     setDrag(next);
     pickZone(next);
-  }, [paintGhost, pickZone]);
+  }, [pickZone]);
 
   const moveDrag = useCallback(
     (pageX: number, pageY: number) => {
@@ -488,7 +486,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   );
 
   const nativeHolding = () => Platform.OS !== 'web' && (pendingActivate.current || !!dragRef.current?.active);
-  const ghostLocal = drag?.active ? windowToLayer(drag.x, drag.y, layerOrigin.current) : null;
+
+  useEffect(() => {
+    if (drag?.active) paintGhost(drag);
+  }, [drag?.active, paintGhost]);
 
   return (
     <DragContext.Provider value={value}>
@@ -515,7 +516,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         }}
       >
         {children}
-        {drag?.active && ghostLocal ? (
+        {drag?.active ? (
           <View
             ref={ghostRef}
             testID="drag-ghost"
@@ -525,7 +526,6 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
               {
                 width: drag.width,
                 height: drag.height,
-                transform: [{ translateX: ghostLocal.x }, { translateY: ghostLocal.y }],
               },
             ]}
           >

@@ -86,13 +86,22 @@ export default function App() {
         }
         if (!isLocalOnlyUid(next.uid)) void next.syncNow();
       })();
+    } else if (
+      storeRef.current &&
+      previousUid.current === session.uid &&
+      !session.isAnonymous &&
+      !isLocalOnlyUid(session.uid)
+    ) {
+      // linkWithCredential keeps the same uid but converts anonymous→Google/Apple.
+      // Flush the outbox so guest work reaches Firestore under the linked account.
+      void storeRef.current.syncNow();
     }
 
     const unsub = storeRef.current.subscribe(() => setTick((value) => value + 1));
     return () => {
       unsub();
     };
-  }, [session?.uid]);
+  }, [session]);
 
   useEffect(() => {
     if (!repo || !storeRef.current) return;
