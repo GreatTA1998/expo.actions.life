@@ -94,6 +94,33 @@ export function zoneSelector(zoneId: string): string {
   return `[data-testid="${zoneId}"], [data-nativeid="${zoneId}"], #${escapeId(zoneId)}`;
 }
 
+export function rectContains(outer: Rect, inner: Rect): boolean {
+  return (
+    outer.x <= inner.x + 0.5 &&
+    outer.y <= inner.y + 0.5 &&
+    outer.x + outer.width >= inner.x + inner.width - 0.5 &&
+    outer.y + outer.height >= inner.y + inner.height - 0.5
+  );
+}
+
+export type ZoneHit = { id: string; area: number; left: number; rect: Rect };
+
+/** Web pickZone: skip ancestors that contain another hit, then largest overlap, then right-most. */
+export function pickBestZoneId(hits: ZoneHit[]): string {
+  let best = '';
+  let max = 0;
+  let bestLeft = -Infinity;
+  for (const hit of hits) {
+    if (hits.some((other) => other.id !== hit.id && rectContains(hit.rect, other.rect))) continue;
+    if (hit.area > max || (hit.area === max && hit.left > bestLeft)) {
+      max = hit.area;
+      best = hit.id;
+      bestLeft = hit.left;
+    }
+  }
+  return best;
+}
+
 export function measureNode(node: unknown, cb: (rect: Rect) => void, zoneId?: string): void {
   const sync = readWindowRect(node, zoneId);
   if (sync) {

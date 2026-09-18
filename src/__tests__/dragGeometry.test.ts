@@ -5,6 +5,7 @@ import {
   durationFromPointerDelta,
   edgeScrollDelta,
   measureNode,
+  pickBestZoneId,
   readWindowRect,
   snapDuration,
   zoneSelector,
@@ -45,6 +46,16 @@ test('measureNode prefers a sync getBoundingClientRect', () => {
     seen = rect;
   });
   assert.equal(seen?.x, 22);
+});
+
+test('pickBestZoneId prefers a nested calendar block over the day column', () => {
+  const column = { x: 22, y: 80, width: 265, height: 400 };
+  const block = { x: 26, y: 200, width: 256, height: 88 };
+  const best = pickBestZoneId([
+    { id: 'cal-2026-09-18', area: 400, left: column.x, rect: column },
+    { id: 'nest-cal-photo-bird', area: 360, left: block.x, rect: block },
+  ]);
+  assert.equal(best, 'nest-cal-photo-bird');
 });
 
 test('durationFromPointerDelta matches web DurationAdjuster math', () => {

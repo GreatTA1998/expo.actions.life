@@ -630,12 +630,14 @@ function DurationHandle({
       {...({
         onPointerDown: (event: {
           stopPropagation?: () => void;
+          preventDefault?: () => void;
           currentTarget?: { setPointerCapture?: (id: number) => void };
           pointerId?: number;
           nativeEvent?: { pageY?: number; pointerId?: number };
           clientY?: number;
         }) => {
           event.stopPropagation?.();
+          event.preventDefault?.();
           const pointerId = event.pointerId ?? event.nativeEvent?.pointerId;
           if (pointerId != null) event.currentTarget?.setPointerCapture?.(pointerId);
           begin(event.nativeEvent?.pageY ?? event.clientY ?? 0);
@@ -643,7 +645,10 @@ function DurationHandle({
         onPointerMove: (event: { nativeEvent?: { pageY?: number }; clientY?: number }) => {
           move(event.nativeEvent?.pageY ?? event.clientY ?? 0);
         },
-        onPointerUp: finish,
+        onPointerUp: (event: { stopPropagation?: () => void }) => {
+          event.stopPropagation?.();
+          finish();
+        },
       } as object)}
     />
   );

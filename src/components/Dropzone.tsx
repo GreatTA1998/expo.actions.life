@@ -90,6 +90,16 @@ export function Dropzone({
                 <Pressable
                   key={habit.id}
                   testID={`template-${habit.id}`}
+                  {...({
+                    onMouseDown: (event: { preventDefault?: () => void }) => {
+                      event.preventDefault?.();
+                      picking.current = true;
+                    },
+                    onPointerDown: (event: { preventDefault?: () => void }) => {
+                      event.preventDefault?.();
+                      picking.current = true;
+                    },
+                  } as object)}
                   onPressIn={() => {
                     picking.current = true;
                   }}

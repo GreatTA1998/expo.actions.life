@@ -12,7 +12,7 @@ import {
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
-import { clipRectToWindow, edgeScrollDelta, readWindowRect } from './geometry';
+import { clipRectToWindow, edgeScrollDelta, pickBestZoneId, readWindowRect, type ZoneHit } from './geometry';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
@@ -140,8 +140,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       right: session.x + Math.max(session.width, 8),
       bottom: session.y + PROBE_H,
     };
-    let best = '';
-    let max = 0;
+    const hits: ZoneHit[] = [];
     for (const [id, zone] of zones.current) {
       if (zone.ownerTaskId && zone.ownerTaskId === session.id) continue;
       const raw = zone.rect;
@@ -153,11 +152,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       const right = Math.min(probe.right, rect.x + rect.width);
       const bottom = Math.min(probe.bottom, rect.y + rect.height);
       const area = Math.max(0, right - left) * Math.max(0, bottom - top);
-      if (area > max) {
-        max = area;
-        best = id;
-      }
+      if (area <= 0) continue;
+      hits.push({ id, area, left: rect.x, rect });
     }
+    const best = pickBestZoneId(hits);
     if (best !== bestRef.current) {
       bestRef.current = best;
       setBestId(best);
