@@ -6,7 +6,14 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import {
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 
 export type ScrollOffset = { x: number; y: number };
 
@@ -27,13 +34,20 @@ type Props = {
   onViewportLayout?: (size: { width: number; height: number }) => void;
 };
 
-const FRICTION = 0.92;
-const STOP = 0.35;
-const MOVE_SLOP = 4;
+type ScrollNative = ScrollView & {
+  setNativeProps?: (props: object) => void;
+};
 
 /**
- * One scroll surface for both axes (web `#scroll-parent` parity).
- * Diagonal pans move days (x) and hours (y) together — no nested ScrollViews.
+ * Dual-axis calendar scroller.
+ *
+ * Native: nested UIScrollViews so ordinary pans keep **native momentum**.
+ * No JS responder capture, no rAF friction, no per-frame drag work.
+ *
+ * Web: single overflow:auto surface (true diagonal), matching `#scroll-parent`.
+ *
+ * Ownership: scroll only. Drag lock calls `setEnabled(false)`; sticky chrome
+ * follows via `onOffsetChange` (caller paints with setNativeProps).
  */
 export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function TwoAxisScroll(
   {
@@ -48,32 +62,19 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
   },
   ref,
 ) {
-  const viewportRef = useRef<View>(null);
-  const contentRef = useRef<View>(null);
   const webScrollRef = useRef<View>(null);
+  const yScrollRef = useRef<ScrollView>(null);
+  const xScrollRef = useRef<ScrollView>(null);
   const size = useRef({ width: 0, height: 0 });
   const offsetRef = useRef<ScrollOffset>(initialOffset);
   const enabledRef = useRef(scrollEnabled);
   enabledRef.current = scrollEnabled;
   const onOffsetRef = useRef(onOffsetChange);
   onOffsetRef.current = onOffsetChange;
-  const dragging = useRef(false);
-  const start = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
-  const velocity = useRef({ x: 0, y: 0 });
-  const lastMove = useRef({ t: 0, x: 0, y: 0 });
-  const momentumRaf = useRef(0);
+  const suppressEmit = useRef(false);
 
   const maxX = () => Math.max(0, contentWidth - size.current.width);
   const maxY = () => Math.max(0, contentHeight - size.current.height);
-
-  const paintNative = useCallback((next: ScrollOffset) => {
-    const node = contentRef.current as (View & { setNativeProps?: (p: object) => void }) | null;
-    node?.setNativeProps?.({
-      style: {
-        transform: [{ translateX: -next.x }, { translateY: -next.y }],
-      },
-    });
-  }, []);
 
   const clamp = useCallback(
     (x: number, y: number): ScrollOffset => ({
@@ -83,82 +84,52 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
     [contentHeight, contentWidth],
   );
 
-  const emit = useCallback(
-    (next: ScrollOffset) => {
-      offsetRef.current = next;
-      if (Platform.OS !== 'web') paintNative(next);
-      onOffsetRef.current?.(next);
-    },
-    [paintNative],
-  );
+  const emit = useCallback((next: ScrollOffset) => {
+    offsetRef.current = next;
+    onOffsetRef.current?.(next);
+  }, []);
 
-  const commit = useCallback(
-    (x: number, y: number) => {
-      const next = clamp(x, y);
-      emit(next);
-      return next;
-    },
-    [clamp, emit],
-  );
-
-  const stopMomentum = useCallback(() => {
-    if (momentumRaf.current) {
-      cancelAnimationFrame(momentumRaf.current);
-      momentumRaf.current = 0;
+  const applyEnabled = useCallback((enabled: boolean) => {
+    enabledRef.current = enabled;
+    (yScrollRef.current as ScrollNative | null)?.setNativeProps?.({ scrollEnabled: enabled });
+    (xScrollRef.current as ScrollNative | null)?.setNativeProps?.({ scrollEnabled: enabled });
+    if (Platform.OS === 'web') {
+      const node = webScrollRef.current as (View & { setNativeProps?: (p: object) => void }) | null;
+      node?.setNativeProps?.({
+        style: { overflow: enabled ? 'auto' : 'hidden' } as object,
+      });
     }
   }, []);
 
-  const runMomentum = useCallback(() => {
-    stopMomentum();
-    const step = () => {
-      if (!enabledRef.current) {
-        momentumRaf.current = 0;
-        return;
-      }
-      velocity.current.x *= FRICTION;
-      velocity.current.y *= FRICTION;
-      if (Math.abs(velocity.current.x) < STOP && Math.abs(velocity.current.y) < STOP) {
-        momentumRaf.current = 0;
-        return;
-      }
-      const cur = offsetRef.current;
-      commit(cur.x - velocity.current.x, cur.y - velocity.current.y);
-      momentumRaf.current = requestAnimationFrame(step);
-    };
-    momentumRaf.current = requestAnimationFrame(step);
-  }, [commit, stopMomentum]);
-
-  useEffect(() => () => stopMomentum(), [stopMomentum]);
-
   useEffect(() => {
-    if (!scrollEnabled) stopMomentum();
-  }, [scrollEnabled, stopMomentum]);
+    applyEnabled(scrollEnabled);
+  }, [applyEnabled, scrollEnabled]);
 
   useImperativeHandle(
     ref,
     () => ({
       scrollTo: (next) => {
-        stopMomentum();
         const clamped = clamp(next.x, next.y);
-        emit(clamped);
+        offsetRef.current = clamped;
+        suppressEmit.current = true;
         if (Platform.OS === 'web') {
           const node = webScrollRef.current as (View & { scrollTo?: (o: object) => void }) | null;
           node?.scrollTo?.({ x: clamped.x, y: clamped.y, animated: false });
+        } else {
+          yScrollRef.current?.scrollTo({ y: clamped.y, animated: false });
+          xScrollRef.current?.scrollTo({ x: clamped.x, animated: false });
         }
+        onOffsetRef.current?.(clamped);
+        requestAnimationFrame(() => {
+          suppressEmit.current = false;
+        });
       },
       getOffset: () => offsetRef.current,
       setEnabled: (enabled) => {
-        enabledRef.current = enabled;
-        if (!enabled) stopMomentum();
-        if (Platform.OS === 'web') {
-          const node = webScrollRef.current as (View & { setNativeProps?: (p: object) => void }) | null;
-          node?.setNativeProps?.({
-            style: { overflow: enabled ? 'auto' : 'hidden' } as object,
-          });
-        }
+        applyEnabled(enabled);
       },
     }),
-    [clamp, emit, stopMomentum],
+    [applyEnabled, clamp],
   );
 
   // Web: overflow:auto is the true dual-axis surface.
@@ -175,11 +146,9 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
         }}
         {...({
           onScroll: (event: { nativeEvent: { contentOffset: ScrollOffset } }) => {
-            if (!enabledRef.current) return;
+            if (!enabledRef.current || suppressEmit.current) return;
             const { contentOffset } = event.nativeEvent;
-            const next = clamp(contentOffset.x, contentOffset.y);
-            offsetRef.current = next;
-            onOffsetRef.current?.(next);
+            emit(clamp(contentOffset.x, contentOffset.y));
           },
           scrollEventThrottle: 16,
         } as object)}
@@ -189,94 +158,57 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
     );
   }
 
-  const panOrigin = useRef<{ x: number; y: number } | null>(null);
-
-  function beginPan(pageX: number, pageY: number) {
-    if (!enabledRef.current) return;
-    stopMomentum();
-    dragging.current = true;
-    start.current = {
-      x: pageX,
-      y: pageY,
-      ox: offsetRef.current.x,
-      oy: offsetRef.current.y,
-    };
-    lastMove.current = { t: Date.now(), x: pageX, y: pageY };
-    velocity.current = { x: 0, y: 0 };
+  function onYScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (suppressEmit.current) return;
+    const y = event.nativeEvent.contentOffset.y;
+    emit({ x: offsetRef.current.x, y });
   }
 
-  function movePan(pageX: number, pageY: number) {
-    if (!dragging.current || !enabledRef.current) return;
-    const dx = pageX - start.current.x;
-    const dy = pageY - start.current.y;
-    const now = Date.now();
-    const dt = Math.max(1, now - lastMove.current.t);
-    velocity.current = {
-      x: ((pageX - lastMove.current.x) / dt) * 16,
-      y: ((pageY - lastMove.current.y) / dt) * 16,
-    };
-    lastMove.current = { t: now, x: pageX, y: pageY };
-    commit(start.current.ox - dx, start.current.oy - dy);
-  }
-
-  function endPan() {
-    if (!dragging.current) return;
-    dragging.current = false;
-    panOrigin.current = null;
-    if (enabledRef.current) runMomentum();
+  function onXScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (suppressEmit.current) return;
+    const x = event.nativeEvent.contentOffset.x;
+    emit({ x, y: offsetRef.current.y });
   }
 
   return (
     <View
-      ref={viewportRef}
       collapsable={false}
-      testID={testID}
       style={styles.viewport}
       onLayout={(event) => {
         const { width, height } = event.nativeEvent.layout;
         size.current = { width, height };
         onViewportLayout?.({ width, height });
       }}
-      onStartShouldSetResponder={() => false}
-      onTouchStart={(event) => {
-        if (!enabledRef.current) return;
-        const touch = event.nativeEvent.touches[0];
-        if (touch) panOrigin.current = { x: touch.pageX, y: touch.pageY };
-      }}
-      onMoveShouldSetResponderCapture={(event) => {
-        if (!enabledRef.current || !panOrigin.current) return false;
-        const touch = event.nativeEvent.touches[0];
-        if (!touch) return false;
-        const dx = touch.pageX - panOrigin.current.x;
-        const dy = touch.pageY - panOrigin.current.y;
-        return Math.abs(dx) > MOVE_SLOP || Math.abs(dy) > MOVE_SLOP;
-      }}
-      onResponderTerminationRequest={() => !dragging.current}
-      onResponderGrant={(event) => {
-        beginPan(event.nativeEvent.pageX, event.nativeEvent.pageY);
-      }}
-      onResponderMove={(event) => movePan(event.nativeEvent.pageX, event.nativeEvent.pageY)}
-      onResponderRelease={endPan}
-      onResponderTerminate={() => {
-        dragging.current = false;
-        panOrigin.current = null;
-        stopMomentum();
-      }}
     >
-      <View
-        ref={contentRef}
-        collapsable={false}
-        style={[
-          styles.content,
-          {
-            width: contentWidth,
-            height: contentHeight,
-            transform: [{ translateX: -offsetRef.current.x }, { translateY: -offsetRef.current.y }],
-          },
-        ]}
+      <ScrollView
+        ref={yScrollRef}
+        style={styles.viewport}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        // Let the native scroller cancel child presses when the finger moves —
+        // do not attach a JS pan responder here (that killed momentum).
+        canCancelContentTouches={scrollEnabled}
+        onScroll={onYScroll}
+        scrollEventThrottle={16}
+        testID={testID ? `${testID}-y` : undefined}
       >
-        {children}
-      </View>
+        <ScrollView
+          ref={xScrollRef}
+          horizontal
+          nestedScrollEnabled
+          style={{ height: contentHeight }}
+          contentContainerStyle={{ width: contentWidth, height: contentHeight }}
+          scrollEnabled={scrollEnabled}
+          showsHorizontalScrollIndicator={false}
+          canCancelContentTouches={scrollEnabled}
+          onScroll={onXScroll}
+          scrollEventThrottle={16}
+          testID={testID}
+          directionalLockEnabled
+        >
+          <View style={{ width: contentWidth, height: contentHeight }}>{children}</View>
+        </ScrollView>
+      </ScrollView>
     </View>
   );
 });
@@ -285,10 +217,5 @@ const styles = StyleSheet.create({
   viewport: {
     flex: 1,
     overflow: 'hidden',
-  },
-  content: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
   },
 });

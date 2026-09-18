@@ -13,34 +13,15 @@ import {
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
-import { edgeScrollDelta, readWindowRect } from './geometry';
+import { resolveDrop, type DragOrigin, type DragSession, type DropTarget } from './commitDrop';
+import { edgeScrollDelta, readWindowRect, type Rect } from './geometry';
 import { paintGhostNative } from './ghostPaint';
 import { createDragGesture } from './gesture';
 import { hitTestZones } from './hitTest';
+import { setScrollersEnabled, type Scroller } from './scrollGate';
 
-export type DropTarget =
-  | { kind: 'list'; parentID: string; index: number }
-  | { kind: 'nest'; parentID: string; at: 'first' | 'last' }
-  | { kind: 'cal'; iso: string; allDay?: boolean };
-
-export type Rect = { x: number; y: number; width: number; height: number };
-
-export type DragOrigin = 'list' | 'cal' | 'nested-cal';
-
-export type DragSession = {
-  id: string;
-  name: string;
-  origin: DragOrigin;
-  active: boolean;
-  pointerX: number;
-  pointerY: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  offsetX: number;
-  offsetY: number;
-};
+export type { DragOrigin, DragSession, DropTarget, Rect };
+export type { Scroller } from './scrollGate';
 
 type Zone = {
   id: string;
@@ -48,15 +29,6 @@ type Zone = {
   ref: RefObject<View | null>;
   ownerTaskId?: string;
   rect: Rect | null;
-};
-
-export type Scroller = {
-  id: string;
-  axis: 'x' | 'y';
-  getViewport: () => Rect | null;
-  getOffset: () => { x: number; y: number };
-  scrollTo: (next: { x: number; y: number }) => void;
-  setEnabled?: (enabled: boolean) => void;
 };
 
 type DragContextValue = {
@@ -238,9 +210,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, [notifyBestId]);
 
   const lockScrollers = useCallback((enabled: boolean) => {
-    for (const scroller of scrollers.current.values()) {
-      scroller.setEnabled?.(enabled);
-    }
+    setScrollersEnabled(scrollers.current.values(), enabled);
   }, []);
 
   const setScrollLocked = useCallback(
@@ -407,19 +377,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       moveRaf.current = 0;
       flushMove();
     }
-    const session = dragRef.current;
-    const zoneId = bestRef.current;
-    if (session?.active && zoneId) {
-      const zone = zones.current.get(zoneId);
-      if (zone) {
-        onDropRef.current(
-          session.id,
-          session.origin,
-          zone.target,
-          { x: session.pointerX, y: session.y },
-          zone.rect,
-        );
-      }
+    const drop = resolveDrop(dragRef.current, bestRef.current, zones.current);
+    if (drop) {
+      onDropRef.current(drop.taskId, drop.origin, drop.target, drop.pointer, drop.zoneRect);
     }
     cancelDrag();
   }, [cancelDrag, flushMove]);

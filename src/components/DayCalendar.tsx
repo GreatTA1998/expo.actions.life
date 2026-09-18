@@ -20,6 +20,7 @@ import {
 } from '../dates';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
+import { createScrollSideEffectScheduler } from './calendar/scrollSideEffects';
 import { TwoAxisScroll, type ScrollOffset, type TwoAxisScrollHandle } from './calendar/TwoAxisScroll';
 import { createComposerLock } from './composerLock';
 import { useDragDrop, type Rect } from './drag/DragDropContext';
@@ -91,6 +92,14 @@ export function DayCalendar({
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
   const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
+  const syncDayScrollRef = useRef<(x: number) => void>(() => {});
+  const windowSync = useRef(
+    createScrollSideEffectScheduler((x) => {
+      syncDayScrollRef.current(x);
+    }),
+  ).current;
+
+  useEffect(() => () => windowSync.dispose(), [windowSync]);
 
   function applyStickyTransforms(next: ScrollOffset) {
     (headerMotion.current as NativeView | null)?.setNativeProps?.({
@@ -101,10 +110,11 @@ export function DayCalendar({
     });
   }
 
+  /** Sticky chrome only — React window remount is coalesced; zones only while dragging. */
   function handleOffset(next: ScrollOffset) {
     offsetRef.current = next;
     applyStickyTransforms(next);
-    syncDayScroll(next.x);
+    windowSync.schedule(next.x);
     refreshZones();
   }
 
@@ -172,6 +182,7 @@ export function DayCalendar({
       }
     }
   }
+  syncDayScrollRef.current = syncDayScroll;
 
   function onCreateKeepOpen(iso: string, time: string, name: string, keepOpen: boolean) {
     onCreateAt(iso, time, name);
