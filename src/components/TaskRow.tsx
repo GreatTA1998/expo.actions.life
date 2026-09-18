@@ -36,6 +36,7 @@ export function TaskRow({
   const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
   const rowRef = useRef<View>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdAt = useRef({ x: 0, y: 0 });
   const hasChildren = children.length > 0;
   const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
   const datePast = isPastDate(task.startDateISO);
@@ -127,12 +128,21 @@ export function TaskRow({
               return;
             }
             clearHold();
+            holdAt.current = { x: pageX, y: pageY };
             holdTimer.current = setTimeout(() => {
               holdTimer.current = null;
               startPointerDrag(pageX, pageY, true);
             }, HOLD_DELAY);
           }}
-          onPressOut={() => {
+          onTouchMove={(event) => {
+            if (Platform.OS === 'web' || !holdTimer.current) return;
+            const { pageX, pageY } = event.nativeEvent;
+            if (Math.hypot(pageX - holdAt.current.x, pageY - holdAt.current.y) > 5) clearHold();
+          }}
+          onTouchEnd={() => {
+            if (Platform.OS !== 'web') clearHold();
+          }}
+          onTouchCancel={() => {
             if (Platform.OS !== 'web') clearHold();
           }}
           {...(Platform.OS === 'web'

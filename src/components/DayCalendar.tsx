@@ -753,6 +753,7 @@ function CalBlock({
   const highlighted = bestId === nestId;
   const didResize = useRef(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdAt = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     return registerZone({
@@ -815,12 +816,21 @@ function CalBlock({
             return;
           }
           clearHold();
+          holdAt.current = { x: pageX, y: pageY };
           holdTimer.current = setTimeout(() => {
             holdTimer.current = null;
             startPointerDrag(pageX, pageY, true);
           }, HOLD_DELAY);
         }}
-        onPressOut={() => {
+        onTouchMove={(event) => {
+          if (Platform.OS === 'web' || !holdTimer.current) return;
+          const { pageX, pageY } = event.nativeEvent;
+          if (Math.hypot(pageX - holdAt.current.x, pageY - holdAt.current.y) > 5) clearHold();
+        }}
+        onTouchEnd={() => {
+          if (Platform.OS !== 'web') clearHold();
+        }}
+        onTouchCancel={() => {
           if (Platform.OS !== 'web') clearHold();
         }}
         style={[styles.block, highlighted && styles.blockHot]}
