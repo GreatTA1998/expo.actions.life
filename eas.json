@@ -12,6 +12,7 @@
     "production": {
       "ios": {
         "appleTeamId": "53R2C3HWTP",
+        "ascAppId": "6813305107",
         "companyName": "Elton Lin",
         "appName": "actions.life",
         "sku": "life.actions.expo",
