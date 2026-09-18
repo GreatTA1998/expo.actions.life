@@ -32,6 +32,8 @@ type Props = {
   testID?: string;
   onOffsetChange?: (next: ScrollOffset) => void;
   onViewportLayout?: (size: { width: number; height: number }) => void;
+  /** Fires when native momentum / drag settles — used to shrink sticky header band. */
+  onScrollIdle?: () => void;
 };
 
 type ScrollNative = ScrollView & {
@@ -59,6 +61,7 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
     testID,
     onOffsetChange,
     onViewportLayout,
+    onScrollIdle,
   },
   ref,
 ) {
@@ -71,7 +74,15 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
   enabledRef.current = scrollEnabled;
   const onOffsetRef = useRef(onOffsetChange);
   onOffsetRef.current = onOffsetChange;
+  const onScrollIdleRef = useRef(onScrollIdle);
+  onScrollIdleRef.current = onScrollIdle;
   const suppressEmit = useRef(false);
+  const axesDragging = useRef({ x: false, y: false });
+
+  const emitIdle = useCallback(() => {
+    if (axesDragging.current.x || axesDragging.current.y) return;
+    onScrollIdleRef.current?.();
+  }, []);
 
   const maxX = () => Math.max(0, contentWidth - size.current.width);
   const maxY = () => Math.max(0, contentHeight - size.current.height);
@@ -170,6 +181,23 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
     emit({ x, y: offsetRef.current.y });
   }
 
+  function onAxisDragBegin(axis: 'x' | 'y') {
+    axesDragging.current[axis] = true;
+  }
+
+  function onAxisEndDrag(axis: 'x' | 'y', event: NativeSyntheticEvent<NativeScrollEvent>) {
+    axesDragging.current[axis] = false;
+    const velocity = event.nativeEvent.velocity;
+    const coasting =
+      !!velocity && (Math.abs(velocity.x ?? 0) > 0.05 || Math.abs(velocity.y ?? 0) > 0.05);
+    if (!coasting) emitIdle();
+  }
+
+  function onAxisMomentumEnd(axis: 'x' | 'y') {
+    axesDragging.current[axis] = false;
+    emitIdle();
+  }
+
   return (
     <View
       collapsable={false}
@@ -189,6 +217,9 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
         // do not attach a JS pan responder here (that killed momentum).
         canCancelContentTouches={scrollEnabled}
         onScroll={onYScroll}
+        onScrollBeginDrag={() => onAxisDragBegin('y')}
+        onScrollEndDrag={(event) => onAxisEndDrag('y', event)}
+        onMomentumScrollEnd={() => onAxisMomentumEnd('y')}
         scrollEventThrottle={16}
         testID={testID ? `${testID}-y` : undefined}
       >
@@ -202,6 +233,9 @@ export const TwoAxisScroll = forwardRef<TwoAxisScrollHandle, Props>(function Two
           showsHorizontalScrollIndicator={false}
           canCancelContentTouches={scrollEnabled}
           onScroll={onXScroll}
+          onScrollBeginDrag={() => onAxisDragBegin('x')}
+          onScrollEndDrag={(event) => onAxisEndDrag('x', event)}
+          onMomentumScrollEnd={() => onAxisMomentumEnd('x')}
           scrollEventThrottle={16}
           testID={testID}
           directionalLockEnabled

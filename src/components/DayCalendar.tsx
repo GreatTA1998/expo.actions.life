@@ -20,6 +20,13 @@ import {
 } from '../dates';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
+import {
+  HEADER_ICON_SIZE,
+  HEADER_MIN_H,
+  settleHeaderBandHeight,
+  sharedHeaderBandHeight,
+  type DayHeaderContent,
+} from './calendar/headerLayout';
 import { createScrollSideEffectScheduler } from './calendar/scrollSideEffects';
 import { TwoAxisScroll, type ScrollOffset, type TwoAxisScrollHandle } from './calendar/TwoAxisScroll';
 import { createComposerLock } from './composerLock';
@@ -74,6 +81,8 @@ export function DayCalendar({
   const [composer, setComposer] = useState<CalComposer>(null);
   const [draft, setDraft] = useState('');
   const [centerISO, setCenterISO] = useState(todayISO);
+  const [headerBandHeight, setHeaderBandHeight] = useState(HEADER_MIN_H);
+  const scrollingRef = useRef(false);
   const days = useMemo(() => {
     const list: string[] = [];
     for (let i = windowStart; i <= windowEnd; i += 1) list.push(calendarStripISO(todayISO, i));
@@ -89,12 +98,51 @@ export function DayCalendar({
   const focusY = calendarJumpToNowY(nowHM(), pixelsPerHour);
   const centered = useRef(false);
   const { refreshZones, registerScroller, drag, pointerLocked, scrollLocked } = useDragDrop();
+  const stripWidth = CAL_TOTAL_COLUMNS * Math.max(columnWidth, 1);
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
   const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
   const windowSync = useRef(createScrollSideEffectScheduler()).current;
 
   useEffect(() => () => windowSync.dispose(), [windowSync]);
+
+  function headerIcons(iso: string) {
+    const allDay = tasksForDay(iso).filter((task) => !task.startTime);
+    const chips = allDay.filter((task) => !task.iconURL);
+    const icons = [
+      ...allDay.filter((task) => task.iconURL).map((task) => ({ id: task.id, name: task.name, iconURL: task.iconURL })),
+      ...HABIT_TEMPLATES.filter(
+        (habit) => habitDueOn(iso, habit.rr) && !allDay.some((task) => task.name === habit.name || task.iconURL === habit.iconURL),
+      ).map((habit) => ({ id: `${habit.id}-${iso}`, name: habit.name, iconURL: habit.iconURL })),
+    ];
+    return { chips, icons };
+  }
+
+  const headerContents = days.map((iso) => {
+    const { chips, icons } = headerIcons(iso);
+    const content: DayHeaderContent = {
+      iconCount: icons.length,
+      chipCount: chips.length,
+      composing: composer?.iso === iso && composer.time === '',
+    };
+    return { iso, chips, icons, content };
+  });
+
+  const targetBandHeight = sharedHeaderBandHeight(
+    headerContents.map((item) => item.content),
+    Math.max(columnWidth, 1),
+  );
+
+  useLayoutEffect(() => {
+    setHeaderBandHeight((current) =>
+      settleHeaderBandHeight(current, targetBandHeight, scrollingRef.current),
+    );
+  }, [targetBandHeight]);
+
+  function onScrollIdle() {
+    scrollingRef.current = false;
+    setHeaderBandHeight((current) => settleHeaderBandHeight(current, targetBandHeight, false));
+  }
 
   function applyStickyTransforms(next: ScrollOffset) {
     (headerMotion.current as NativeView | null)?.setNativeProps?.({
@@ -129,6 +177,7 @@ export function DayCalendar({
 
   /** Sticky chrome only — React window remount is coalesced; zones only while dragging. */
   function handleOffset(next: ScrollOffset) {
+    scrollingRef.current = true;
     offsetRef.current = next;
     applyStickyTransforms(next);
     windowSync.schedule(next.x, syncDayScroll);
@@ -188,18 +237,6 @@ export function DayCalendar({
     setComposer({ iso, time: time ? calendarNudgeCreateTime(time, defaultDuration) : '' });
   }
 
-  function headerIcons(iso: string) {
-    const allDay = tasksForDay(iso).filter((task) => !task.startTime);
-    const chips = allDay.filter((task) => !task.iconURL);
-    const icons = [
-      ...allDay.filter((task) => task.iconURL).map((task) => ({ id: task.id, name: task.name, iconURL: task.iconURL })),
-      ...HABIT_TEMPLATES.filter(
-        (habit) => habitDueOn(iso, habit.rr) && !allDay.some((task) => task.name === habit.name || task.iconURL === habit.iconURL),
-      ).map((habit) => ({ id: `${habit.id}-${iso}`, name: habit.name, iconURL: habit.iconURL })),
-    ];
-    return { chips, icons };
-  }
-
   return (
     <View
       style={styles.wrap}
@@ -210,42 +247,51 @@ export function DayCalendar({
         if (Math.abs(next - columnWidth) > 8) setColumnWidth(next);
       }}
     >
-      <View style={styles.headerRow}>
-        <Text style={[styles.month, { width: TIME_AXIS }]} testID="calendar-month">
-          {Number(centerISO.slice(5, 7))}
-        </Text>
-        <View style={styles.headerClip}>
+      <View style={[styles.headerRow, { height: headerBandHeight }]}>
+        <View style={[styles.monthCell, { width: TIME_AXIS, height: headerBandHeight }]}>
+          <Text style={styles.month} testID="calendar-month">
+            {Number(centerISO.slice(5, 7))}
+          </Text>
+        </View>
+        <View style={[styles.headerClip, { height: headerBandHeight }]}>
           <View
             ref={headerMotion}
             collapsable={false}
-            style={[styles.headerMotion, { transform: [{ translateX: -offsetRef.current.x }] }]}
+            style={[
+              styles.headerMotion,
+              {
+                width: stripWidth,
+                height: headerBandHeight,
+                transform: [{ translateX: -offsetRef.current.x }],
+              },
+            ]}
           >
-            <View style={{ width: leftSpacer }} />
-            {days.map((iso) => {
-              const { chips, icons } = headerIcons(iso);
+            {headerContents.map((item, i) => {
+              const index = windowStart + i;
               return (
                 <DayHead
-                  key={`h-${iso}`}
-                  iso={iso}
+                  key={`h-${item.iso}`}
+                  iso={item.iso}
                   width={columnWidth}
-                  isToday={iso === todayISO}
-                  chips={chips}
-                  icons={icons}
+                  height={headerBandHeight}
+                  left={index * columnWidth}
+                  isToday={item.iso === todayISO}
+                  chips={item.chips}
+                  icons={item.icons}
                   onOpenTask={onOpenTask}
-                  composing={composer?.iso === iso && composer.time === ''}
+                  composing={item.content.composing === true}
                   draft={draft}
                   onDraft={setDraft}
                   onCompose={() => {
-                    if (composer?.iso === iso && composer.time === '') return;
+                    if (composer?.iso === item.iso && composer.time === '') return;
                     setDraft('');
-                    setComposer({ iso, time: '' });
+                    setComposer({ iso: item.iso, time: '' });
                   }}
-                  onCreate={(name, keepOpen) => onCreateKeepOpen(iso, '', name, keepOpen)}
+                  onCreate={(name, keepOpen) => onCreateKeepOpen(item.iso, '', name, keepOpen)}
                   onCancel={() => setComposer(null)}
                 />
               );
             })}
-            <View style={{ width: rightSpacer }} />
           </View>
         </View>
       </View>
@@ -277,10 +323,11 @@ export function DayCalendar({
           <TwoAxisScroll
             ref={scrollRef}
             testID="calendar-days"
-            contentWidth={CAL_TOTAL_COLUMNS * Math.max(columnWidth, 1)}
+            contentWidth={stripWidth}
             contentHeight={gridHeight}
             scrollEnabled={scrollEnabled}
             onOffsetChange={handleOffset}
+            onScrollIdle={onScrollIdle}
             onViewportLayout={() => measureScroller(dayWrapRef, dayViewport)}
           >
             <View
@@ -330,6 +377,8 @@ export function DayCalendar({
 function DayHead({
   iso,
   width,
+  height,
+  left,
   isToday,
   chips,
   icons,
@@ -343,6 +392,8 @@ function DayHead({
 }: {
   iso: string;
   width: number;
+  height: number;
+  left: number;
   isToday: boolean;
   chips: TaskRecord[];
   icons: { id: string; name: string; iconURL: string }[];
@@ -406,11 +457,16 @@ function DayHead({
         if (composing) return;
         onCompose();
       }}
-      style={[styles.dayHead, { width }, highlighted && styles.columnHot]}
+      style={[
+        styles.dayHead,
+        { width, height, left },
+        highlighted && styles.columnHot,
+      ]}
     >
-      <Text style={[styles.dow, isToday && styles.dowToday]}>
-        {`${weekdayShort(iso)} ${dayNumber(iso)}`}
-      </Text>
+      <View style={styles.dowRow}>
+        <Text style={[styles.dow, isToday && styles.dowToday]}>{weekdayShort(iso)}</Text>
+        <Text style={[styles.dow, isToday && styles.dowToday]}>{dayNumber(iso)}</Text>
+      </View>
       {icons.length ? (
         <View style={styles.iconRow} pointerEvents="none">
           {icons.map((icon) => (
@@ -424,7 +480,7 @@ function DayHead({
           ))}
         </View>
       ) : null}
-      <View style={styles.chipRow}>
+      <View style={styles.chipCol}>
         {chips.map((task) => (
           <Pressable
             key={task.id}
@@ -432,6 +488,7 @@ function DayHead({
             onPress={() => onOpenTask(task.id)}
             style={styles.allDayChip}
           >
+            <View style={styles.chipCheck} />
             <Text numberOfLines={1} style={styles.chipText}>
               {task.name}
             </Text>
@@ -465,6 +522,7 @@ function DayHead({
           />
         </Pressable>
       ) : null}
+      <View style={styles.headSpacer} pointerEvents="none" />
     </Pressable>
   );
 }
@@ -972,11 +1030,22 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
+    backgroundColor: colors.calBg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    zIndex: 2,
+  },
+  monthCell: {
+    alignItems: 'center',
+    paddingTop: 8,
   },
   month: {
-    paddingTop: 8,
-    paddingBottom: 2,
     color: colors.ink,
     fontSize: type.small,
     fontWeight: '600',
@@ -985,38 +1054,44 @@ const styles = StyleSheet.create({
   headerClip: {
     flex: 1,
     overflow: 'hidden',
-    maxHeight: 88,
   },
   headerMotion: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    position: 'relative',
   },
   dayHead: {
-    minHeight: 36,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    paddingLeft: 8,
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    position: 'absolute',
+    top: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 8,
+    paddingHorizontal: 4,
   },
-  chipRow: {
+  dowRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingRight: 6,
+  },
+  chipCol: {
+    alignSelf: 'stretch',
+    gap: 4,
+    paddingHorizontal: 4,
     paddingTop: 2,
   },
   iconRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: 4,
-    paddingLeft: 6,
     paddingTop: 2,
   },
   habitIcon: {
-    width: 32,
-    height: 32,
+    width: HEADER_ICON_SIZE,
+    height: HEADER_ICON_SIZE,
+  },
+  headSpacer: {
+    height: 18,
+    width: '100%',
   },
   nowLine: {
     position: 'absolute',
@@ -1035,17 +1110,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   allDayChip: {
-    backgroundColor: colors.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'stretch',
     paddingVertical: 2,
-    maxWidth: 120,
+  },
+  chipCheck: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.ink,
   },
   chipText: {
+    flexShrink: 1,
     color: colors.ink,
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '500',
   },
   calPreview: {
     position: 'absolute',
@@ -1072,6 +1154,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: type.small,
     fontWeight: '600',
+    textAlign: 'center',
   },
   dowToday: {
     color: colors.ink,
