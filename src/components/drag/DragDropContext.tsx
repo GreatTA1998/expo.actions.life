@@ -67,6 +67,7 @@ export type Scroller = {
 type DragContextValue = {
   drag: DragSession | null;
   pointerLocked: boolean;
+  scrollLocked: boolean;
   bestId: string;
   registerZone: (zone: Omit<Zone, 'rect'>) => () => void;
   registerScroller: (scroller: Scroller) => () => void;
@@ -83,6 +84,11 @@ type DragContextValue = {
   endDrag: () => void;
   cancelDrag: () => void;
   refreshZones: () => void;
+  /** Disable inbox/calendar scroll while duration-resizing (web preventTouchScroll). */
+  setScrollLocked: (locked: boolean) => void;
+  getDragSession: () => DragSession | null;
+  /** Per-frame drag motion without React re-rendering the forest. */
+  subscribeDragMotion: (listener: () => void) => () => void;
 };
 
 const DragContext = createContext<DragContextValue | null>(null);
@@ -125,6 +131,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [drag, setDrag] = useState<DragSession | null>(emptySession);
   const [bestId, setBestId] = useState('');
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [scrollLocked, setScrollLockedState] = useState(false);
   const [ghostTransform, setGhostTransform] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
@@ -137,9 +144,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const layerOrigin = useRef({ x: 0, y: 0 });
   const ghostRef = useRef<GhostNative | null>(null);
   const moveRaf = useRef(0);
+  const refreshRaf = useRef(0);
   const pendingMove = useRef<{ x: number; y: number } | null>(null);
+  const motionListeners = useRef(new Set<() => void>());
   onDropRef.current = onDrop;
-  dragRef.current = drag;
   bestRef.current = bestId;
 
   const measureLayer = useCallback(() => {
@@ -169,7 +177,20 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     }
   }, []);
 
-  const refreshZones = useCallback(() => {
+  const notifyDragMotion = useCallback(() => {
+    for (const listener of motionListeners.current) listener();
+  }, []);
+
+  const getDragSession = useCallback(() => dragRef.current, []);
+
+  const subscribeDragMotion = useCallback((listener: () => void) => {
+    motionListeners.current.add(listener);
+    return () => {
+      motionListeners.current.delete(listener);
+    };
+  }, []);
+
+  const measureAllZones = useCallback(() => {
     for (const zone of zones.current.values()) {
       const node = zone.ref.current as (View & { measureInWindow?: Function }) | null;
       const sync = readWindowRect(node, zone.id);
@@ -182,6 +203,28 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       });
     }
   }, []);
+
+  /**
+   * Idle onLayout from every Dropzone/TaskRow used to remeasure the whole forest
+   * (O(n) layouts × O(n) measures). Only measure while a drag is live, and at most
+   * once per animation frame.
+   */
+  const refreshZones = useCallback(() => {
+    if (!dragRef.current?.active && !pendingActivate.current) return;
+    if (refreshRaf.current) return;
+    refreshRaf.current = requestAnimationFrame(() => {
+      refreshRaf.current = 0;
+      measureAllZones();
+    });
+  }, [measureAllZones]);
+
+  const refreshZonesNow = useCallback(() => {
+    if (refreshRaf.current) {
+      cancelAnimationFrame(refreshRaf.current);
+      refreshRaf.current = 0;
+    }
+    measureAllZones();
+  }, [measureAllZones]);
 
   const pickZone = useCallback((session: DragSession) => {
     const win = Dimensions.get('window');
@@ -219,6 +262,14 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     }
   }, []);
 
+  const setScrollLocked = useCallback(
+    (locked: boolean) => {
+      setScrollLockedState(locked);
+      lockScrollers(!locked);
+    },
+    [lockScrollers],
+  );
+
   const publishDrag = useCallback((session: DragSession | null) => {
     dragRef.current = session;
     setDrag(session);
@@ -249,11 +300,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       if (session.active) {
         lockScrollers(false);
         setPointerLocked(true);
-        refreshZones();
+        refreshZonesNow();
         pickZone(session);
+        notifyDragMotion();
       }
     },
-    [gesture, lockScrollers, measureLayer, pickZone, publishDrag, refreshZones],
+    [gesture, lockScrollers, measureLayer, notifyDragMotion, pickZone, publishDrag, refreshZonesNow],
   );
 
   const activateDrag = useCallback(
@@ -271,11 +323,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       if (session.active) return token;
       const next = { ...session, active: true };
       publishDrag(next);
-      refreshZones();
+      refreshZonesNow();
       pickZone(next);
+      notifyDragMotion();
       return token;
     },
-    [gesture, lockScrollers, measureLayer, pickZone, publishDrag, refreshZones],
+    [gesture, lockScrollers, measureLayer, notifyDragMotion, pickZone, publishDrag, refreshZonesNow],
   );
 
   const flushMove = useCallback(() => {
@@ -294,11 +347,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     };
     dragRef.current = next;
     paintGhost(next);
-    // One React publish per frame keeps calendar live-preview in sync without
-    // re-rendering every touch sample.
-    setDrag(next);
+    // Do not setDrag here — that re-rendered every Dropzone/TaskRow/CalBlock
+    // once per frame. Ghost + zone pick + calendar preview use refs/native props.
     pickZone(next);
-  }, [paintGhost, pickZone]);
+    notifyDragMotion();
+  }, [notifyDragMotion, paintGhost, pickZone]);
 
   const moveDrag = useCallback(
     (pageX: number, pageY: number) => {
@@ -324,9 +377,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       const current = dragRef.current;
       if (!current?.active) return;
       pendingMove.current = { x: pageX, y: pageY };
-      // Keep dragRef in sync with the live pointer. paintGhost on web writes
+      // Keep dragRef live with the pointer. paintGhost on web writes
       // ghostTransform from this session; useLayoutEffect(bestId) re-paints from
-      // dragRef and must not regress to the last rAF position.
+      // dragRef and must not regress to a stale position.
       const live: DragSession = {
         ...current,
         pointerX: pageX,
@@ -357,7 +410,8 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     setPointerLocked(false);
     setDrag(null);
     setBestId('');
-  }, [gesture, lockScrollers]);
+    notifyDragMotion();
+  }, [gesture, lockScrollers, notifyDragMotion]);
 
   const endDrag = useCallback(() => {
     if (moveRaf.current) {
@@ -459,19 +513,21 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         moved = true;
       }
       if (moved) {
-        refreshZones();
+        refreshZonesNow();
         pickZone(session);
+        notifyDragMotion();
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [drag?.active, pickZone, refreshZones]);
+  }, [drag?.active, notifyDragMotion, pickZone, refreshZonesNow]);
 
   const value = useMemo<DragContextValue>(
     () => ({
       drag,
       pointerLocked,
+      scrollLocked,
       bestId,
       registerZone,
       registerScroller,
@@ -481,6 +537,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       endDrag,
       cancelDrag,
       refreshZones,
+      setScrollLocked,
+      getDragSession,
+      subscribeDragMotion,
     }),
     [
       activateDrag,
@@ -489,11 +548,15 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       cancelDrag,
       drag,
       endDrag,
+      getDragSession,
       moveDrag,
       pointerLocked,
       refreshZones,
       registerScroller,
       registerZone,
+      scrollLocked,
+      setScrollLocked,
+      subscribeDragMotion,
     ],
   );
 

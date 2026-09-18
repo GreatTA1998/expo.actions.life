@@ -22,7 +22,7 @@ import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
 import { createComposerLock } from './composerLock';
 import { useDragDrop, type Rect } from './drag/DragDropContext';
-import { durationFromPointerDelta, measureNode, readWindowRect, snapDuration } from './drag/geometry';
+import { durationFromPointerDelta, measureNode, snapDuration } from './drag/geometry';
 import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
 
 export const CAL_START_HOUR = 0;
@@ -89,9 +89,10 @@ export function DayCalendar({
   const hoursPinned = useRef(false);
   const pairingScroll = useRef(false);
   const drivingScroll = useRef<'header' | 'days' | null>(null);
-  const { refreshZones, registerScroller, drag, pointerLocked } = useDragDrop();
+  const { refreshZones, registerScroller, drag, pointerLocked, scrollLocked } = useDragDrop();
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
+  const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
 
   useEffect(() => {
     const unHour = registerScroller({
@@ -244,8 +245,8 @@ export function DayCalendar({
         <ScrollView
           ref={headerScrollRef}
           horizontal
-          scrollEnabled={!drag && !pointerLocked}
-          canCancelContentTouches={!pointerLocked}
+          scrollEnabled={scrollEnabled}
+          canCancelContentTouches={!pointerLocked && !scrollLocked}
           showsHorizontalScrollIndicator={false}
           style={styles.headerScroll}
           onScrollBeginDrag={() => beginLinkedScroll('header')}
@@ -295,9 +296,8 @@ export function DayCalendar({
       <ScrollView
         ref={hourScrollRef}
         style={styles.fill}
-        scrollEnabled={!drag && !pointerLocked}
-        canCancelContentTouches={!pointerLocked}
-        contentOffset={{ x: 0, y: focusY }}
+        scrollEnabled={scrollEnabled}
+        canCancelContentTouches={!pointerLocked && !scrollLocked}
         onScroll={(event) => {
           hourOffset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
           refreshZones();
@@ -324,8 +324,8 @@ export function DayCalendar({
             ref={dayScrollRef}
             horizontal
             nestedScrollEnabled
-            scrollEnabled={!drag && !pointerLocked}
-            canCancelContentTouches={!pointerLocked}
+            scrollEnabled={scrollEnabled}
+            canCancelContentTouches={!pointerLocked && !scrollLocked}
             showsHorizontalScrollIndicator={false}
             onScrollBeginDrag={() => beginLinkedScroll('days')}
             onScrollEndDrag={(event) => {
@@ -359,6 +359,9 @@ export function DayCalendar({
                 childrenOf={childrenOf}
                 onSetDuration={onSetDuration}
                 parentLabel={parentLabel}
+                pinHourScroll={() => {
+                  hourScrollRef.current?.scrollTo({ y: hourOffset.current.y, animated: false });
+                }}
               />
             ))}
             <View style={{ width: rightSpacer }} />
@@ -530,6 +533,7 @@ function DayColumn({
   childrenOf,
   onSetDuration,
   parentLabel,
+  pinHourScroll,
 }: {
   iso: string;
   isToday: boolean;
@@ -547,9 +551,11 @@ function DayColumn({
   childrenOf: (id: string) => TaskTree[];
   onSetDuration: (id: string, minutes: number) => void;
   parentLabel: (id: string) => string;
+  pinHourScroll: () => void;
 }) {
-  const { registerZone, bestId, refreshZones, drag } = useDragDrop();
+  const { registerZone, bestId, refreshZones, drag, getDragSession, subscribeDragMotion } = useDragDrop();
   const ref = useRef<View>(null);
+  const previewRef = useRef<View>(null);
   const colY = useRef(0);
   const lock = useRef(createComposerLock()).current;
   const inputRef = useRef<TextInput>(null);
@@ -563,8 +569,11 @@ function DayColumn({
   const alive = useRef(true);
   const zoneId = `cal-${iso}`;
   const highlighted = bestId === zoneId;
-  const liveColY = readWindowRect(ref.current, zoneId)?.y ?? colY.current;
   const interval = Math.max(1, snapInterval);
+  const pixelsPerHourRef = useRef(pixelsPerHour);
+  pixelsPerHourRef.current = pixelsPerHour;
+  const intervalRef = useRef(interval);
+  intervalRef.current = interval;
 
   useEffect(() => {
     alive.current = true;
@@ -588,7 +597,7 @@ function DayColumn({
   }, [composer, lock]);
 
   useEffect(() => {
-    if (!highlighted || !drag) return;
+    if (!highlighted || !drag?.active) return;
     measureNode(
       ref.current,
       (rect) => {
@@ -596,7 +605,28 @@ function DayColumn({
       },
       zoneId,
     );
-  }, [drag, highlighted, zoneId]);
+  }, [drag?.active, highlighted, zoneId]);
+
+  useEffect(() => {
+    if (!highlighted) return;
+    const paint = () => {
+      const session = getDragSession();
+      const node = previewRef.current as (View & { setNativeProps?: (props: object) => void }) | null;
+      if (!session?.active || !node?.setNativeProps) return;
+      const top =
+        (snapMinutes(((session.y - colY.current) / pixelsPerHourRef.current) * 60, intervalRef.current) /
+          60) *
+        pixelsPerHourRef.current;
+      node.setNativeProps({
+        style: {
+          top,
+          height: Math.max(28, session.height),
+        },
+      });
+    };
+    paint();
+    return subscribeDragMotion(paint);
+  }, [getDragSession, highlighted, subscribeDragMotion]);
 
   function timeAt(pageY: number, columnY: number) {
     const minutes = ((pageY - columnY) / pixelsPerHour) * 60;
@@ -664,14 +694,15 @@ function DayColumn({
           <Text style={styles.nowLabel}>{nowHM()}</Text>
         </View>
       ) : null}
-      {highlighted && drag ? (
+      {highlighted && drag?.active ? (
         <View
+          ref={previewRef}
           pointerEvents="none"
           testID={`cal-preview-${iso}`}
           style={[
             styles.calPreview,
             {
-              top: (snapMinutes(((drag.y - liveColY) / pixelsPerHour) * 60, interval) / 60) * pixelsPerHour,
+              top: 0,
               height: Math.max(28, drag.height),
             },
           ]}
@@ -688,6 +719,7 @@ function DayColumn({
             pixelsPerHour={pixelsPerHour}
             onOpenTask={onOpenTask}
             onSetDuration={onSetDuration}
+            pinHourScroll={pinHourScroll}
           />
         ))}
       {composer ? (
@@ -735,6 +767,7 @@ function CalBlock({
   pixelsPerHour,
   onOpenTask,
   onSetDuration,
+  pinHourScroll,
 }: {
   task: TaskRecord;
   children: TaskTree[];
@@ -742,8 +775,10 @@ function CalBlock({
   pixelsPerHour: number;
   onOpenTask: (id: string) => void;
   onSetDuration: (id: string, minutes: number) => void;
+  pinHourScroll: () => void;
 }) {
-  const { registerZone, bestId, armDrag, activateDrag, cancelDrag, refreshZones } = useDragDrop();
+  const { registerZone, bestId, armDrag, activateDrag, cancelDrag, refreshZones, setScrollLocked } =
+    useDragDrop();
   const ref = useRef<View>(null);
   const nestId = `nest-cal-${task.id}`;
   const minutes = parseMinutes(task.startTime);
@@ -843,13 +878,24 @@ function CalBlock({
         pixelsPerHour={pixelsPerHour}
         onStart={() => {
           cancelDrag();
+          setScrollLocked(true);
           setPreview(task.duration);
         }}
-        onChange={(next) => setPreview(next)}
+        onChange={(next) => {
+          setPreview(next);
+          requestAnimationFrame(pinHourScroll);
+        }}
         onCommit={(next) => {
           didResize.current = true;
           setPreview(0);
+          setScrollLocked(false);
           onSetDuration(task.id, snapDuration(next, 15));
+          requestAnimationFrame(pinHourScroll);
+        }}
+        onCancel={() => {
+          setPreview(0);
+          setScrollLocked(false);
+          requestAnimationFrame(pinHourScroll);
         }}
       />
     </View>
@@ -879,6 +925,7 @@ function DurationHandle({
   onStart,
   onChange,
   onCommit,
+  onCancel,
 }: {
   taskId: string;
   duration: number;
@@ -886,6 +933,7 @@ function DurationHandle({
   onStart: () => void;
   onChange: (minutes: number) => void;
   onCommit: (minutes: number) => void;
+  onCancel: () => void;
 }) {
   const startY = useRef(0);
   const startDur = useRef(duration);
@@ -914,6 +962,12 @@ function DurationHandle({
     onCommit(latest.current);
   }
 
+  function abort() {
+    if (!active.current) return;
+    active.current = false;
+    onCancel();
+  }
+
   return (
     <View
       testID={`cal-resize-${taskId}`}
@@ -924,9 +978,7 @@ function DurationHandle({
       onResponderGrant={(event) => begin(event.nativeEvent.pageY)}
       onResponderMove={(event) => move(event.nativeEvent.pageY)}
       onResponderRelease={finish}
-      onResponderTerminate={() => {
-        active.current = false;
-      }}
+      onResponderTerminate={abort}
       {...({
         onPointerDown: (event: {
           stopPropagation?: () => void;
@@ -942,13 +994,19 @@ function DurationHandle({
           if (pointerId != null) event.currentTarget?.setPointerCapture?.(pointerId);
           begin(event.nativeEvent?.pageY ?? event.clientY ?? 0);
         },
-        onPointerMove: (event: { nativeEvent?: { pageY?: number }; clientY?: number }) => {
+        onPointerMove: (event: {
+          preventDefault?: () => void;
+          nativeEvent?: { pageY?: number };
+          clientY?: number;
+        }) => {
+          if (active.current) event.preventDefault?.();
           move(event.nativeEvent?.pageY ?? event.clientY ?? 0);
         },
         onPointerUp: (event: { stopPropagation?: () => void }) => {
           event.stopPropagation?.();
           finish();
         },
+        onPointerCancel: abort,
       } as object)}
     />
   );

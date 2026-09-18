@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PanResponder, StyleSheet, View } from 'react-native';
 import { clampSplitFraction, SPLIT_HANDLE_PX } from '../dates';
 import { colors } from '../theme';
@@ -10,24 +10,47 @@ type Props = {
   bottom: ReactNode;
 };
 
+/**
+ * Visual split updates locally while dragging (web ResizeBoundary onInput).
+ * Persist via onChange only on release — store.notify on every move re-renders
+ * the full inbox/calendar forest and is what made large accounts lag.
+ */
 export function SplitPane({ split, onChange, top, bottom }: Props) {
+  const [visual, setVisual] = useState(split);
   const start = useRef(split);
   const height = useRef(1);
-  const splitRef = useRef(split);
-  splitRef.current = split;
+  const visualRef = useRef(split);
+  const dragging = useRef(false);
+  visualRef.current = visual;
+
+  useEffect(() => {
+    if (dragging.current) return;
+    setVisual(split);
+    visualRef.current = split;
+  }, [split]);
 
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
-        start.current = splitRef.current;
+        dragging.current = true;
+        start.current = visualRef.current;
       },
       onPanResponderMove: (_, gesture) => {
         if (!height.current) return;
         const remaining = Math.max(1, height.current - SPLIT_HANDLE_PX);
-        const next = start.current - gesture.dy / remaining;
-        onChange(clampSplitFraction(next, height.current));
+        const next = clampSplitFraction(start.current - gesture.dy / remaining, height.current);
+        visualRef.current = next;
+        setVisual(next);
+      },
+      onPanResponderRelease: () => {
+        dragging.current = false;
+        onChange(visualRef.current);
+      },
+      onPanResponderTerminate: () => {
+        dragging.current = false;
+        onChange(visualRef.current);
       },
     }),
   ).current;
@@ -39,7 +62,7 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
         height.current = e.nativeEvent.layout.height;
       }}
     >
-      <View style={[styles.pane, { flex: 1 - split }]}>{top}</View>
+      <View style={[styles.pane, { flex: 1 - visual }]}>{top}</View>
       <View
         {...pan.panHandlers}
         style={styles.handle}
@@ -52,7 +75,7 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
           <View style={styles.bar} />
         </View>
       </View>
-      <View style={[styles.pane, { flex: split }]}>{bottom}</View>
+      <View style={[styles.pane, { flex: visual }]}>{bottom}</View>
     </View>
   );
 }
