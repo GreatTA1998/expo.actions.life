@@ -12,7 +12,7 @@ import {
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
-import { clipRectToWindow, edgeScrollDelta } from './geometry';
+import { clipRectToWindow, edgeScrollDelta, readWindowRect } from './geometry';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
@@ -121,6 +121,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const refreshZones = useCallback(() => {
     for (const zone of zones.current.values()) {
       const node = zone.ref.current as (View & { measureInWindow?: Function }) | null;
+      const sync = readWindowRect(node);
+      if (sync) {
+        zone.rect = sync;
+        continue;
+      }
       node?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
         zone.rect = { x, y, width, height };
       });
@@ -360,7 +365,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       >
         {children}
         {drag?.active ? (
-          <View pointerEvents="none" style={[styles.ghost, { width: drag.width, height: drag.height, transform: [{ translateX: drag.x }, { translateY: drag.y }] }]}>
+          <View
+            testID="drag-ghost"
+            pointerEvents="none"
+            style={[styles.ghost, { width: drag.width, height: drag.height, transform: [{ translateX: drag.x }, { translateY: drag.y }] }]}
+          >
             <Text numberOfLines={2} style={styles.ghostText}>
               {drag.name || 'Untitled'}
             </Text>

@@ -51,3 +51,30 @@ export function snapDuration(minutes: number, interval = 15): number {
   const step = Math.max(1, interval);
   return Math.max(step, Math.round(minutes / step) * step);
 }
+
+/** Sync window rect on web; `measureInWindow` is async and misses fast pointer passes. */
+export function readWindowRect(node: unknown): Rect | null {
+  const el = node as {
+    getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
+    measureInWindow?: (
+      cb: (x: number, y: number, width: number, height: number) => void,
+    ) => void;
+  } | null;
+  const rect = el?.getBoundingClientRect?.();
+  if (rect && (rect.width > 0 || rect.height > 0)) {
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }
+  return null;
+}
+
+export function measureNode(node: unknown, cb: (rect: Rect) => void): void {
+  const sync = readWindowRect(node);
+  if (sync) {
+    cb(sync);
+    return;
+  }
+  const view = node as {
+    measureInWindow?: (cb: (x: number, y: number, width: number, height: number) => void) => void;
+  } | null;
+  view?.measureInWindow?.((x, y, width, height) => cb({ x, y, width, height }));
+}

@@ -4,6 +4,7 @@ import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { Dropzone } from './Dropzone';
 import { useDragDrop, type Rect } from './drag/DragDropContext';
+import { measureNode } from './drag/geometry';
 import { TaskRow, type ComposerSlot } from './TaskRow';
 
 type Props = {
@@ -51,9 +52,8 @@ export function Inbox({
   }, [registerScroller]);
 
   function measureViewport() {
-    const node = wrapRef.current as (View & { measureInWindow?: Function }) | null;
-    node?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
-      viewport.current = { x, y, width, height };
+    measureNode(wrapRef.current, (rect) => {
+      viewport.current = rect;
     });
   }
 

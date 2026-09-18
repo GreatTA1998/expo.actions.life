@@ -4,6 +4,8 @@ import {
   clipRectToWindow,
   durationFromPointerDelta,
   edgeScrollDelta,
+  measureNode,
+  readWindowRect,
   snapDuration,
 } from '../components/drag/geometry';
 
@@ -22,6 +24,18 @@ test('edgeScrollDelta scrolls only when the pointer is on that scroller edge', (
   assert.equal(edgeScrollDelta({ x: 20, y: 550 }, viewport, 'y', 44, 16), 0);
   assert.equal(edgeScrollDelta({ x: 20, y: 100 }, viewport, 'y', 44, 16), 0);
   assert.equal(edgeScrollDelta({ x: 10, y: 420 }, viewport, 'x', 44, 16), -16);
+});
+
+test('measureNode prefers a sync getBoundingClientRect', () => {
+  const node = {
+    getBoundingClientRect: () => ({ x: 22, y: 80, width: 200, height: 40 }),
+  };
+  assert.deepEqual(readWindowRect(node), { x: 22, y: 80, width: 200, height: 40 });
+  let seen: { x: number; y: number } | null = null;
+  measureNode(node, (rect) => {
+    seen = rect;
+  });
+  assert.equal(seen?.x, 22);
 });
 
 test('durationFromPointerDelta matches web DurationAdjuster math', () => {

@@ -13,7 +13,7 @@ import {
 } from '../dates';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HOLD_DELAY, useDragDrop, type Rect } from './drag/DragDropContext';
-import { durationFromPointerDelta, snapDuration } from './drag/geometry';
+import { durationFromPointerDelta, measureNode, snapDuration } from './drag/geometry';
 
 export const CAL_START_HOUR = 0;
 export const CAL_END_HOUR = 24;
@@ -102,9 +102,8 @@ export function DayCalendar({
   }, [registerScroller]);
 
   function measureScroller(ref: { current: View | null }, into: { current: Rect | null }) {
-    const node = ref.current as (View & { measureInWindow?: Function }) | null;
-    node?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
-      into.current = { x, y, width, height };
+    measureNode(ref.current, (rect) => {
+      into.current = rect;
     });
   }
 
@@ -310,10 +309,9 @@ function DayColumn({
       testID={`day-column-${iso}`}
       onLayout={() => refreshZones()}
       onPress={(event) => {
-        const node = ref.current as (View & { measureInWindow?: Function }) | null;
-        node?.measureInWindow?.((_x: number, y: number) => {
+        measureNode(ref.current, (rect) => {
           onDraft('');
-          onCompose({ iso, time: timeAt(event.nativeEvent.pageY, y) });
+          onCompose({ iso, time: timeAt(event.nativeEvent.pageY, rect.y) });
         });
       }}
       style={[styles.column, { width, height }, highlighted && styles.columnHot]}
@@ -398,14 +396,8 @@ function CalBlock({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number) {
-    const nodeView = ref.current as (View & { measureInWindow?: Function }) | null;
-    nodeView?.measureInWindow?.((x: number, y: number, width: number, blockHeight: number) => {
-      armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, {
-        x,
-        y,
-        width,
-        height: blockHeight,
-      });
+    measureNode(ref.current, (rect) => {
+      armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, rect);
     });
   }
 

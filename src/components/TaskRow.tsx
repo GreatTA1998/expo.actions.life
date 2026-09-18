@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
+import { measureNode } from './drag/geometry';
 import { Dropzone } from './Dropzone';
 
 export type ComposerSlot = { parentID: string; index: number } | null;
@@ -48,9 +49,8 @@ export function TaskRow({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number) {
-    const nodeView = rowRef.current as (View & { measureInWindow?: Function }) | null;
-    nodeView?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
-      armDrag(task, 'list', pageX, pageY, { x, y, width, height });
+    measureNode(rowRef.current, (rect) => {
+      armDrag(task, 'list', pageX, pageY, rect);
     });
   }
 
