@@ -67,6 +67,7 @@ export function Inbox({
         {forest.map((node, i) => (
           <View key={node.task.id}>
             <Dropzone
+              key={`list-root-${node.task.id}-before`}
               zoneId={`list-root-${i}`}
               parentID=""
               index={i}
@@ -96,6 +97,7 @@ export function Inbox({
           </View>
         ))}
         <Dropzone
+          key={`list-root-end-${forest.length}`}
           zoneId={`list-root-${forest.length}`}
           parentID=""
           index={forest.length}
@@ -103,8 +105,9 @@ export function Inbox({
           composing={composer?.parentID === '' && composer.index === forest.length}
           onCompose={() => setComposer({ parentID: '', index: forest.length })}
           onSubmit={(name, extras) => {
-            onCreate({ parentID: '', index: forest.length }, name, extras);
-            setComposer({ parentID: '', index: forest.length + 1 });
+            const at = forest.length;
+            onCreate({ parentID: '', index: at }, name, extras);
+            setComposer({ parentID: '', index: at + 1 });
           }}
           onCancel={() => setComposer(null)}
         />

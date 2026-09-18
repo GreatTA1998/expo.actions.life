@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { matchHabitTemplates } from '../services/seed';
 import { colors, type } from '../theme';
+import { createComposerLock } from './composerLock';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
 
 type CreateExtras = { duration?: number };
@@ -30,11 +31,27 @@ export function Dropzone({
   const { registerZone, bestId, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
   const picking = useRef(false);
-  const committed = useRef(false);
+  const alive = useRef(true);
+  const lock = useRef(createComposerLock()).current;
+  const draftRef = useRef('');
+  const wasComposing = useRef(composing);
   const [draft, setDraft] = useState('');
   const root = depth === 0;
   const highlighted = bestId === zoneId;
   const templates = matchHabitTemplates(draft);
+
+  function setDraftValue(value: string) {
+    draftRef.current = value;
+    setDraft(value);
+  }
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      lock.dispose();
+    };
+  }, [lock]);
 
   useEffect(() => {
     return registerZone({
@@ -45,18 +62,20 @@ export function Dropzone({
   }, [index, parentID, registerZone, zoneId]);
 
   useEffect(() => {
-    if (!composing) {
-      committed.current = false;
-      setDraft('');
-    }
-  }, [composing]);
+    if (composing && !wasComposing.current) lock.beginCompose();
+    wasComposing.current = composing;
+    if (!composing) setDraftValue('');
+  }, [composing, lock]);
 
   function commit(name: string, extras?: CreateExtras) {
-    if (committed.current) return;
-    committed.current = true;
+    if (!lock.commit()) return;
     picking.current = false;
-    if (name) onSubmit(name, extras);
-    else onCancel();
+    if (name) {
+      onSubmit(name, extras);
+      setDraftValue('');
+    } else {
+      onCancel();
+    }
   }
 
   return (
@@ -77,17 +96,18 @@ export function Dropzone({
         <View style={styles.composer}>
           <TextInput
             autoFocus
+            blurOnSubmit={false}
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={setDraftValue}
             placeholder="New task"
             placeholderTextColor={colors.faint}
             style={[styles.input, root ? styles.inputRoot : styles.inputNested]}
-            onSubmitEditing={() => commit(draft.trim())}
+            onSubmitEditing={() => commit(draftRef.current.trim())}
             onBlur={() => {
-              setTimeout(() => {
-                if (picking.current) return;
-                commit(draft.trim());
-              }, 50);
+              lock.scheduleBlur(() => {
+                if (!alive.current || picking.current) return;
+                commit(draftRef.current.trim());
+              });
             }}
             returnKeyType="done"
           />

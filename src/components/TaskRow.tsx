@@ -175,6 +175,7 @@ export function TaskRow({
             </View>
           ))}
           <Dropzone
+            key={`list-${task.id}-end-${children.length}`}
             zoneId={`list-${task.id}-${children.length}`}
             parentID={task.id}
             index={children.length}
