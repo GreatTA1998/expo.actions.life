@@ -3,8 +3,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { colors, type } from '../theme';
 import {
   calendarJumpToNowY,
+  calendarMountedWindow,
+  calendarNudgeCreateTime,
+  calendarShouldRecenter,
+  calendarStripISO,
+  CAL_ORIGIN_OFFSET,
+  CAL_TOTAL_COLUMNS,
   dayNumber,
-  dayWindow,
   formatMinutes,
   habitDueOn,
   nowHM,
@@ -14,6 +19,7 @@ import {
 } from '../dates';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
+import { createComposerLock } from './composerLock';
 import { HOLD_DELAY, useDragDrop, type Rect } from './drag/DragDropContext';
 import { durationFromPointerDelta, measureNode, readWindowRect, snapDuration } from './drag/geometry';
 
@@ -23,9 +29,6 @@ export const PX_PER_HOUR = 50;
 export const CAL_PX_PER_HOUR = PX_PER_HOUR;
 const TIME_AXIS = 22;
 const HOURS = Array.from({ length: CAL_END_HOUR - CAL_START_HOUR }, (_, i) => CAL_START_HOUR + i);
-const INITIAL_PAST = 30;
-const INITIAL_FUTURE = 30;
-const CHUNK = 21;
 
 type CalComposer = { iso: string; time: string } | null;
 
@@ -34,6 +37,9 @@ type Props = {
   tasksForDay: (iso: string) => TaskRecord[];
   childrenOf: (id: string) => TaskTree[];
   pixelsPerHour?: number;
+  columnWidthHint?: number;
+  snapInterval?: number;
+  defaultDuration?: number;
   onOpenTask: (id: string) => void;
   onCreateAt: (iso: string, time: string, name: string) => void;
   onSetDuration: (id: string, minutes: number) => void;
@@ -45,18 +51,27 @@ export function DayCalendar({
   tasksForDay,
   childrenOf,
   pixelsPerHour = PX_PER_HOUR,
+  columnWidthHint = 160,
+  snapInterval = 1,
+  defaultDuration = 30,
   onOpenTask,
   onCreateAt,
   onSetDuration,
   parentLabel,
 }: Props) {
-  const [past, setPast] = useState(INITIAL_PAST);
-  const [future, setFuture] = useState(INITIAL_FUTURE);
+  const todayIndex = CAL_ORIGIN_OFFSET;
+  const initialWindow = calendarMountedWindow(todayIndex, todayIndex + 1);
+  const [windowStart, setWindowStart] = useState(initialWindow.start);
+  const [windowEnd, setWindowEnd] = useState(initialWindow.end);
   const [columnWidth, setColumnWidth] = useState(0);
   const [composer, setComposer] = useState<CalComposer>(null);
   const [draft, setDraft] = useState('');
   const [centerISO, setCenterISO] = useState(todayISO);
-  const days = useMemo(() => dayWindow(todayISO, past, future), [todayISO, past, future]);
+  const days = useMemo(() => {
+    const list: string[] = [];
+    for (let i = windowStart; i <= windowEnd; i += 1) list.push(calendarStripISO(todayISO, i));
+    return list;
+  }, [todayISO, windowStart, windowEnd]);
   const gridHeight = (CAL_END_HOUR - CAL_START_HOUR) * pixelsPerHour;
   const hourScrollRef = useRef<ScrollView>(null);
   const dayScrollRef = useRef<ScrollView>(null);
@@ -67,12 +82,12 @@ export function DayCalendar({
   const dayOffset = useRef({ x: 0, y: 0 });
   const hourViewport = useRef<Rect | null>(null);
   const dayViewport = useRef<Rect | null>(null);
-  const expanding = useRef(false);
-  const todayIndex = past;
   const focusY = calendarJumpToNowY(nowHM(), pixelsPerHour);
   const centered = useRef(false);
   const hoursPinned = useRef(false);
   const { refreshZones, registerScroller, drag, pointerLocked } = useDragDrop();
+  const leftSpacer = windowStart * columnWidth;
+  const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
 
   useEffect(() => {
     const unHour = registerScroller({
@@ -116,40 +131,47 @@ export function DayCalendar({
     }
     if (columnWidth < 40) return;
     if (centered.current) return;
-    dayScrollRef.current?.scrollTo({ x: todayIndex * columnWidth, animated: false });
-    headerScrollRef.current?.scrollTo({ x: todayIndex * columnWidth, animated: false });
-    dayOffset.current = { x: todayIndex * columnWidth, y: 0 };
+    const x = todayIndex * columnWidth;
+    dayScrollRef.current?.scrollTo({ x, animated: false });
+    headerScrollRef.current?.scrollTo({ x, animated: false });
+    dayOffset.current = { x, y: 0 };
     centered.current = true;
   }, [columnWidth, focusY, todayIndex]);
 
-  function syncHeader(x: number) {
-    headerScrollRef.current?.scrollTo({ x, animated: false });
-    const index = Math.round(x / Math.max(columnWidth, 1));
-    const iso = days[Math.max(0, Math.min(days.length - 1, index))];
-    if (iso && iso !== centerISO) setCenterISO(iso);
+  function syncDayScroll(x: number) {
+    const width = Math.max(columnWidth, 1);
+    const viewW = dayViewport.current?.width || width;
+    const left = Math.max(0, Math.min(CAL_TOTAL_COLUMNS - 1, Math.floor(x / width)));
+    const right = Math.max(left, Math.min(CAL_TOTAL_COLUMNS - 1, Math.ceil((x + viewW) / width) - 1));
+    const iso = calendarStripISO(todayISO, left);
+    if (iso !== centerISO) setCenterISO(iso);
+    if (calendarShouldRecenter(left, right, windowStart, windowEnd)) {
+      const next = calendarMountedWindow(left, right);
+      setWindowStart(next.start);
+      setWindowEnd(next.end);
+    }
   }
 
-  function maybeExpand(x: number) {
-    if (expanding.current || columnWidth < 40) return;
-    if (x < columnWidth * 6) {
-      expanding.current = true;
-      setPast((value) => value + CHUNK);
-      requestAnimationFrame(() => {
-        const nextX = x + CHUNK * columnWidth;
-        dayOffset.current = { x: nextX, y: 0 };
-        dayScrollRef.current?.scrollTo({ x: nextX, animated: false });
-        headerScrollRef.current?.scrollTo({ x: nextX, animated: false });
-        expanding.current = false;
-        refreshZones();
-      });
+  function onCreateKeepOpen(iso: string, time: string, name: string, keepOpen: boolean) {
+    onCreateAt(iso, time, name);
+    setDraft('');
+    if (!keepOpen) {
+      setComposer(null);
       return;
     }
-    const maxX = (days.length - 8) * columnWidth;
-    if (x > maxX) {
-      expanding.current = true;
-      setFuture((value) => value + CHUNK);
-      expanding.current = false;
-    }
+    setComposer({ iso, time: time ? calendarNudgeCreateTime(time, defaultDuration) : '' });
+  }
+
+  function headerIcons(iso: string) {
+    const allDay = tasksForDay(iso).filter((task) => !task.startTime);
+    const chips = allDay.filter((task) => !task.iconURL);
+    const icons = [
+      ...allDay.filter((task) => task.iconURL).map((task) => ({ id: task.id, name: task.name, iconURL: task.iconURL })),
+      ...HABIT_TEMPLATES.filter(
+        (habit) => habitDueOn(iso, habit.rr) && !allDay.some((task) => task.name === habit.name || task.iconURL === habit.iconURL),
+      ).map((habit) => ({ id: `${habit.id}-${iso}`, name: habit.name, iconURL: habit.iconURL })),
+    ];
+    return { chips, icons };
   }
 
   return (
@@ -157,44 +179,57 @@ export function DayCalendar({
       style={styles.wrap}
       testID="day-calendar"
       onLayout={(event) => {
-        const available = Math.max(160, event.nativeEvent.layout.width - TIME_AXIS);
-        const next = Math.min(160, Math.round(available * 0.72));
+        const available = Math.max(columnWidthHint, event.nativeEvent.layout.width - TIME_AXIS);
+        const next = Math.min(columnWidthHint, Math.round(available * 0.72));
         if (Math.abs(next - columnWidth) > 8) setColumnWidth(next);
       }}
     >
-      <Text style={styles.month} testID="calendar-month">
-        {Number(centerISO.slice(5, 7))}
-      </Text>
-      <ScrollView
-        ref={headerScrollRef}
-        horizontal
-        scrollEnabled={false}
-        showsHorizontalScrollIndicator={false}
-        style={styles.headerScroll}
-      >
-        <View style={{ width: TIME_AXIS }} />
-        {days.map((iso) => {
-          const allDay = tasksForDay(iso).filter((task) => !task.startTime);
-          const chips = allDay.filter((task) => !task.iconURL);
-          const icons = [
-            ...allDay.filter((task) => task.iconURL).map((task) => ({ id: task.id, name: task.name, iconURL: task.iconURL })),
-            ...HABIT_TEMPLATES.filter(
-              (habit) => habitDueOn(iso, habit.rr) && !allDay.some((task) => task.name === habit.name || task.iconURL === habit.iconURL),
-            ).map((habit) => ({ id: `${habit.id}-${iso}`, name: habit.name, iconURL: habit.iconURL })),
-          ];
-          return (
-          <DayHead
-            key={`h-${iso}`}
-            iso={iso}
-            width={columnWidth}
-            isToday={iso === todayISO}
-            chips={chips}
-            icons={icons}
-            onOpenTask={onOpenTask}
-          />
-          );
-        })}
-      </ScrollView>
+      <View style={styles.headerRow}>
+        <Text style={[styles.month, { width: TIME_AXIS }]} testID="calendar-month">
+          {Number(centerISO.slice(5, 7))}
+        </Text>
+        <ScrollView
+          ref={headerScrollRef}
+          horizontal
+          scrollEnabled={!drag && !pointerLocked}
+          showsHorizontalScrollIndicator={false}
+          style={styles.headerScroll}
+          onScroll={(event) => {
+            const x = event.nativeEvent.contentOffset.x;
+            dayOffset.current = { x, y: 0 };
+            dayScrollRef.current?.scrollTo({ x, animated: false });
+            syncDayScroll(x);
+            refreshZones();
+          }}
+          scrollEventThrottle={16}
+        >
+          <View style={{ width: leftSpacer }} />
+          {days.map((iso) => {
+            const { chips, icons } = headerIcons(iso);
+            return (
+              <DayHead
+                key={`h-${iso}`}
+                iso={iso}
+                width={columnWidth}
+                isToday={iso === todayISO}
+                chips={chips}
+                icons={icons}
+                onOpenTask={onOpenTask}
+                composing={composer?.iso === iso && composer.time === ''}
+                draft={draft}
+                onDraft={setDraft}
+                onCompose={() => {
+                  setDraft('');
+                  setComposer({ iso, time: '' });
+                }}
+                onCreate={(name, keepOpen) => onCreateKeepOpen(iso, '', name, keepOpen)}
+                onCancel={() => setComposer(null)}
+              />
+            );
+          })}
+          <View style={{ width: rightSpacer }} />
+        </ScrollView>
+      </View>
       <View
         ref={hourWrapRef}
         style={styles.gridScroll}
@@ -236,13 +271,14 @@ export function DayCalendar({
             onScroll={(event) => {
               const x = event.nativeEvent.contentOffset.x;
               dayOffset.current = { x, y: 0 };
-              syncHeader(x);
-              maybeExpand(x);
+              headerScrollRef.current?.scrollTo({ x, animated: false });
+              syncDayScroll(x);
               refreshZones();
             }}
             scrollEventThrottle={16}
             testID="calendar-days"
           >
+            <View style={{ width: leftSpacer }} />
             {days.map((iso) => (
               <DayColumn
                 key={iso}
@@ -251,22 +287,20 @@ export function DayCalendar({
                 width={columnWidth}
                 height={gridHeight}
                 pixelsPerHour={pixelsPerHour}
+                snapInterval={snapInterval}
                 tasks={tasksForDay(iso)}
-                composer={composer?.iso === iso ? composer : null}
+                composer={composer?.iso === iso && composer.time !== '' ? composer : null}
                 draft={draft}
                 onDraft={setDraft}
                 onCompose={setComposer}
-                onCreate={(time, name) => {
-                  onCreateAt(iso, time, name);
-                  setComposer(null);
-                  setDraft('');
-                }}
+                onCreate={(time, name, keepOpen) => onCreateKeepOpen(iso, time, name, keepOpen)}
                 onOpenTask={onOpenTask}
                 childrenOf={childrenOf}
                 onSetDuration={onSetDuration}
                 parentLabel={parentLabel}
               />
             ))}
+            <View style={{ width: rightSpacer }} />
           </ScrollView>
           </View>
         </View>
@@ -283,6 +317,12 @@ function DayHead({
   chips,
   icons,
   onOpenTask,
+  composing,
+  draft,
+  onDraft,
+  onCompose,
+  onCreate,
+  onCancel,
 }: {
   iso: string;
   width: number;
@@ -290,9 +330,21 @@ function DayHead({
   chips: TaskRecord[];
   icons: { id: string; name: string; iconURL: string }[];
   onOpenTask: (id: string) => void;
+  composing: boolean;
+  draft: string;
+  onDraft: (value: string) => void;
+  onCompose: () => void;
+  onCreate: (name: string, keepOpen: boolean) => void;
+  onCancel: () => void;
 }) {
   const { registerZone, bestId, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
+  const lock = useRef(createComposerLock()).current;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const composingRef = useRef(composing);
+  composingRef.current = composing;
+  const wasComposing = useRef(composing);
   const zoneId = `cal-head-${iso}`;
   const highlighted = bestId === zoneId;
 
@@ -304,20 +356,33 @@ function DayHead({
     });
   }, [iso, registerZone, zoneId]);
 
+  useEffect(() => {
+    if (composing && !wasComposing.current) lock.beginCompose();
+    wasComposing.current = composing;
+  }, [composing, lock]);
+
+  function commit(keepOpen: boolean) {
+    if (!lock.commit()) return;
+    const name = draftRef.current.trim();
+    if (name) onCreate(name, keepOpen);
+    else if (composingRef.current) onCancel();
+  }
+
   return (
-    <View
+    <Pressable
       ref={ref}
       collapsable={false}
       nativeID={zoneId}
       testID={`day-head-${iso}`}
       onLayout={() => refreshZones()}
+      onPress={onCompose}
       style={[styles.dayHead, { width }, highlighted && styles.columnHot]}
     >
       <Text style={[styles.dow, isToday && styles.dowToday]}>
         {`${weekdayShort(iso)} ${dayNumber(iso)}`}
       </Text>
       {icons.length ? (
-        <View style={styles.iconRow}>
+        <View style={styles.iconRow} pointerEvents="none">
           {icons.map((icon) => (
             <Image
               key={icon.id}
@@ -343,7 +408,23 @@ function DayHead({
           </Pressable>
         ))}
       </View>
-    </View>
+      {composing ? (
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.headComposer}>
+          <TextInput
+            autoFocus
+            blurOnSubmit={false}
+            value={draft}
+            onChangeText={onDraft}
+            placeholder="All-day"
+            placeholderTextColor={colors.faint}
+            style={styles.headInput}
+            testID={`cal-head-input-${iso}`}
+            onSubmitEditing={() => commit(true)}
+            onBlur={() => lock.scheduleBlur(() => commit(false))}
+          />
+        </Pressable>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -353,6 +434,7 @@ function DayColumn({
   width,
   height,
   pixelsPerHour,
+  snapInterval,
   tasks,
   composer,
   draft,
@@ -369,12 +451,13 @@ function DayColumn({
   width: number;
   height: number;
   pixelsPerHour: number;
+  snapInterval: number;
   tasks: TaskRecord[];
   composer: CalComposer;
   draft: string;
   onDraft: (value: string) => void;
   onCompose: (slot: CalComposer) => void;
-  onCreate: (time: string, name: string) => void;
+  onCreate: (time: string, name: string, keepOpen: boolean) => void;
   onOpenTask: (id: string) => void;
   childrenOf: (id: string) => TaskTree[];
   onSetDuration: (id: string, minutes: number) => void;
@@ -383,10 +466,16 @@ function DayColumn({
   const { registerZone, bestId, refreshZones, drag } = useDragDrop();
   const ref = useRef<View>(null);
   const colY = useRef(0);
-  const committed = useRef(false);
+  const lock = useRef(createComposerLock()).current;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const composingRef = useRef(!!composer);
+  composingRef.current = !!composer;
+  const wasComposing = useRef(!!composer);
   const zoneId = `cal-${iso}`;
   const highlighted = bestId === zoneId;
   const liveColY = readWindowRect(ref.current, zoneId)?.y ?? colY.current;
+  const interval = Math.max(1, snapInterval);
 
   useEffect(() => {
     return registerZone({
@@ -397,8 +486,9 @@ function DayColumn({
   }, [iso, registerZone, zoneId]);
 
   useEffect(() => {
-    if (!composer) committed.current = false;
-  }, [composer]);
+    if (composer && !wasComposing.current) lock.beginCompose();
+    wasComposing.current = !!composer;
+  }, [composer, lock]);
 
   useEffect(() => {
     if (!highlighted || !drag) return;
@@ -413,7 +503,14 @@ function DayColumn({
 
   function timeAt(pageY: number, columnY: number) {
     const minutes = ((pageY - columnY) / pixelsPerHour) * 60;
-    return formatMinutes(snapMinutes(minutes, 15));
+    return formatMinutes(snapMinutes(minutes, interval));
+  }
+
+  function commit(keepOpen: boolean) {
+    if (!lock.commit()) return;
+    const name = draftRef.current.trim();
+    if (name && composer) onCreate(composer.time, name, keepOpen);
+    else if (composingRef.current) onCompose(null);
   }
 
   return (
@@ -459,7 +556,7 @@ function DayColumn({
           style={[
             styles.calPreview,
             {
-              top: (snapMinutes(((drag.y - liveColY) / pixelsPerHour) * 60, 15) / 60) * pixelsPerHour,
+              top: (snapMinutes(((drag.y - liveColY) / pixelsPerHour) * 60, interval) / 60) * pixelsPerHour,
               height: Math.max(28, drag.height),
             },
           ]}
@@ -487,25 +584,15 @@ function DayColumn({
         >
           <TextInput
             autoFocus
+            blurOnSubmit={false}
             value={draft}
             onChangeText={onDraft}
             placeholder={composer.time}
             placeholderTextColor={colors.faint}
             style={styles.calInput}
-            onSubmitEditing={() => {
-              if (committed.current) return;
-              committed.current = true;
-              const name = draft.trim();
-              if (name) onCreate(composer.time, name);
-              else onCompose(null);
-            }}
-            onBlur={() => {
-              if (committed.current) return;
-              committed.current = true;
-              const name = draft.trim();
-              if (name) onCreate(composer.time, name);
-              else onCompose(null);
-            }}
+            testID={`cal-input-${iso}`}
+            onSubmitEditing={() => commit(true)}
+            onBlur={() => lock.scheduleBlur(() => commit(false))}
           />
         </View>
       ) : null}
@@ -725,17 +812,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.calBg,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   month: {
-    paddingHorizontal: 12,
-    paddingTop: 6,
+    paddingTop: 8,
     paddingBottom: 2,
     color: colors.ink,
     fontSize: type.small,
     fontWeight: '600',
+    textAlign: 'center',
   },
   headerScroll: {
+    flex: 1,
     maxHeight: 88,
-    flexGrow: 0,
   },
   dayHead: {
     minHeight: 36,
@@ -950,6 +1041,21 @@ const styles = StyleSheet.create({
   calInput: {
     flex: 1,
     paddingHorizontal: 8,
+    color: colors.ink,
+    fontSize: type.small,
+  },
+  headComposer: {
+    marginTop: 4,
+    marginRight: 6,
+    height: 28,
+    borderWidth: 2,
+    borderColor: colors.composer,
+    borderRadius: 6,
+    backgroundColor: colors.card,
+  },
+  headInput: {
+    flex: 1,
+    paddingHorizontal: 6,
     color: colors.ink,
     fontSize: type.small,
   },

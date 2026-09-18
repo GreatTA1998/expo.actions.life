@@ -481,7 +481,7 @@ export class TaskTreeStore {
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
 
   async setListHeightSplit(value: number): Promise<void> {
-    this.listHeightSplit = Math.min(0.85, Math.max(0.2, value));
+    this.listHeightSplit = Math.min(1, Math.max(0, value));
     this.profile = { ...this.profile, listHeightSplit: this.listHeightSplit, updatedAt: Date.now() };
     this.notify();
     if (this.splitTimer) clearTimeout(this.splitTimer);

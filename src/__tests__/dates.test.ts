@@ -5,7 +5,15 @@ import {
   addMonthsISO,
   calendarFocusMinutes,
   calendarJumpToNowY,
+  calendarMountedWindow,
+  calendarNudgeCreateTime,
+  calendarOriginISO,
   calendarScrollOffset,
+  calendarShouldRecenter,
+  calendarStripISO,
+  CAL_ORIGIN_OFFSET,
+  CAL_TOTAL_COLUMNS,
+  clampSplitFraction,
   dayWindow,
   habitDueOn,
   parseMinutes,
@@ -63,4 +71,38 @@ test('dayWindow is a partial-infinite range around today', () => {
   assert.equal(days[2], today);
   assert.equal(days[0], addDaysISO(today, -2));
   assert.equal(days[5], addDaysISO(today, 3));
+});
+
+test('calendar strip is 365 days with today at offset 182', () => {
+  const today = '2026-09-18';
+  assert.equal(calendarOriginISO(today), addDaysISO(today, -CAL_ORIGIN_OFFSET));
+  assert.equal(calendarStripISO(today, CAL_ORIGIN_OFFSET), today);
+  assert.equal(calendarStripISO(today, CAL_TOTAL_COLUMNS - 1), addDaysISO(today, 182));
+});
+
+test('calendar DOM window is viewport ±8 and recenters at a 4-column cushion', () => {
+  const window = calendarMountedWindow(182, 183);
+  assert.equal(window.start, 174);
+  assert.equal(window.end, 191);
+  assert.equal(calendarShouldRecenter(182, 183, 174, 191), false);
+  assert.equal(calendarShouldRecenter(176, 177, 174, 191), true);
+  assert.equal(calendarShouldRecenter(188, 190, 174, 191), true);
+  const start = calendarMountedWindow(0, 1);
+  assert.equal(start.start, 0);
+  const end = calendarMountedWindow(363, 364);
+  assert.equal(end.end, 364);
+});
+
+test('calendar Enter nudges the next create by duration + 30 minutes', () => {
+  assert.equal(calendarNudgeCreateTime('07:00', 30, 30), '08:00');
+  assert.equal(calendarNudgeCreateTime('23:30', 30, 30), '23:59');
+  assert.equal(calendarNudgeCreateTime(''), '');
+});
+
+test('split clamp keeps 48px on each pane around a 48px grip', () => {
+  assert.equal(clampSplitFraction(0.5, 800), 0.5);
+  assert.equal(clampSplitFraction(0, 800), 48 / 800);
+  assert.equal(clampSplitFraction(1, 800), (800 - 48 - 48) / 800);
+  assert.equal(clampSplitFraction(0.01, 800), 48 / 800);
+  assert.ok(clampSplitFraction(0.1, 800) > 48 / 800);
 });

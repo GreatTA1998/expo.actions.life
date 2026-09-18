@@ -13,6 +13,7 @@ type Props = {
   index: number;
   depth: number;
   composing: boolean;
+  ghost?: boolean;
   onCompose: () => void;
   onSubmit: (name: string, extras?: CreateExtras) => void;
   onCancel: () => void;
@@ -24,6 +25,7 @@ export function Dropzone({
   index,
   depth,
   composing,
+  ghost = false,
   onCompose,
   onSubmit,
   onCancel,
@@ -92,6 +94,7 @@ export function Dropzone({
       style={[
         styles.zone,
         root ? styles.root : styles.sub,
+        ghost && styles.ghost,
         highlighted && styles.hot,
         composing && styles.composing,
       ]}
@@ -173,6 +176,10 @@ const styles = StyleSheet.create({
   },
   sub: {
     minHeight: 16,
+  },
+  ghost: {
+    marginTop: -16,
+    zIndex: 3,
   },
   hot: {
     backgroundColor: colors.dropPreview,

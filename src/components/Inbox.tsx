@@ -111,11 +111,15 @@ export function Inbox({
           }}
           onCancel={() => setComposer(null)}
         />
-        {forest.length === 0 && !composer ? (
-          <Pressable onPress={() => setComposer({ parentID: '', index: 0 })} style={styles.emptyHit}>
+        <Pressable
+          testID="inbox-empty-padding"
+          onPress={() => setComposer({ parentID: '', index: forest.length })}
+          style={styles.emptyHit}
+        >
+          {forest.length === 0 && !composer ? (
             <Text style={styles.empty}>Tap the empty space to add a task</Text>
-          </Pressable>
-        ) : null}
+          ) : null}
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -131,6 +135,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   emptyHit: {
+    flexGrow: 1,
+    minHeight: 48,
     padding: 16,
   },
   empty: {

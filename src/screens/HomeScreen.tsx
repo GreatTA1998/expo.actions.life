@@ -5,7 +5,7 @@ import { DayCalendar } from '../components/DayCalendar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { SplitPane } from '../components/SplitPane';
 import { DragDropProvider, type DragOrigin, type DropTarget, type Rect } from '../components/drag/DragDropContext';
-import { formatMinutes, parseMinutes, todayISO } from '../dates';
+import { formatMinutes, parseMinutes, snapMinutes, todayISO } from '../dates';
 import type { TaskRecord } from '../models/types';
 import type { TaskTreeStore } from '../services/taskStore';
 
@@ -66,10 +66,11 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
         return;
       }
       const px = store.profile.pixelsPerHour || 50;
+      const interval = Math.max(1, store.profile.calSnapInterval || 1);
       const minutes = zoneRect
         ? Math.max(0, ((pointer.y - zoneRect.y) / px) * 60)
         : parseMinutes('09:00');
-      const time = formatMinutes(Math.round(minutes / 15) * 15);
+      const time = formatMinutes(snapMinutes(minutes, interval));
       void store.placeOnCal(taskId, target.iso, time, origin === 'nested-cal');
     },
     [store],
@@ -94,6 +95,9 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
                 tasksForDay={tasksForDay}
                 childrenOf={(id) => store.childrenOf(id)}
                 pixelsPerHour={store.profile.pixelsPerHour || 50}
+                columnWidthHint={store.profile.calColumnWidth || 160}
+                snapInterval={store.profile.calSnapInterval || 1}
+                defaultDuration={30}
                 onOpenTask={onOpen}
                 onCreateAt={(iso, time, name) => {
                   void store.create({

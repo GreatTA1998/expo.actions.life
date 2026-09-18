@@ -148,7 +148,7 @@ export function TaskRow({
         </Pressable>
       </View>
       {!task.isCollapsed ? (
-        <View>
+        <View style={styles.nested}>
           {children.map((child, i) => (
             <View key={child.task.id}>
               <Dropzone
@@ -180,6 +180,7 @@ export function TaskRow({
             parentID={task.id}
             index={children.length}
             depth={depth + 1}
+            ghost={children.length > 0}
             composing={composer?.parentID === task.id && composer.index === children.length}
             onCompose={() => onCompose({ parentID: task.id, index: children.length })}
             onSubmit={(name, extras) => onCreate({ parentID: task.id, index: children.length }, name, extras)}
@@ -302,5 +303,8 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 18,
     lineHeight: 20,
+  },
+  nested: {
+    position: 'relative',
   },
 });

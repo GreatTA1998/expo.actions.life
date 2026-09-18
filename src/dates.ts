@@ -57,6 +57,67 @@ export function dayWindow(centerISO: string, past: number, future: number): stri
   return days;
 }
 
+/** Web Calendar.svelte: 365-day strip, origin = today − 182, DOM window ±8, recenter at 4. */
+export const CAL_TOTAL_COLUMNS = 365;
+export const CAL_ORIGIN_OFFSET = 182;
+export const CAL_VIEWPORT_PAD = 8;
+export const CAL_RECENTER_CUSHION = 4;
+export const CAL_CREATE_GAP_MINUTES = 30;
+export const SPLIT_MIN_PX = 48;
+export const SPLIT_HANDLE_PX = 48;
+
+export function calendarOriginISO(today: string): string {
+  return addDaysISO(today, -CAL_ORIGIN_OFFSET);
+}
+
+export function calendarStripISO(today: string, index: number): string {
+  return addDaysISO(calendarOriginISO(today), index);
+}
+
+export function calendarMountedWindow(
+  viewportLeft: number,
+  viewportRight: number,
+  pad = CAL_VIEWPORT_PAD,
+  total = CAL_TOTAL_COLUMNS,
+): { start: number; end: number } {
+  const left = Math.max(0, Math.min(total - 1, viewportLeft));
+  const right = Math.max(left, Math.min(total - 1, viewportRight));
+  return {
+    start: Math.max(0, left - pad),
+    end: Math.min(total - 1, right + pad),
+  };
+}
+
+export function calendarShouldRecenter(
+  viewportLeft: number,
+  viewportRight: number,
+  windowStart: number,
+  windowEnd: number,
+  cushion = CAL_RECENTER_CUSHION,
+): boolean {
+  return viewportLeft < windowStart + cushion || viewportRight > windowEnd - cushion;
+}
+
+/** After calendar Enter, the next create sits duration + 30 minutes later. */
+export function calendarNudgeCreateTime(time: string, duration = 30, gap = CAL_CREATE_GAP_MINUTES): string {
+  if (!time) return '';
+  return formatMinutes(parseMinutes(time) + duration + gap);
+}
+
+/** List is the bottom pane. Min 48px each side, 48px grip, persist a 0–1 fraction. */
+export function clampSplitFraction(
+  split: number,
+  appHeight: number,
+  minPx = SPLIT_MIN_PX,
+  handlePx = SPLIT_HANDLE_PX,
+): number {
+  if (!(appHeight > 0)) return Math.min(1, Math.max(0, split));
+  if (appHeight <= handlePx + minPx * 2) return 0.5;
+  const min = minPx / appHeight;
+  const max = (appHeight - handlePx - minPx) / appHeight;
+  return Math.min(max, Math.max(min, split));
+}
+
 export function monthYearLabel(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });

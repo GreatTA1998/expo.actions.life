@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from 'react';
 import { PanResponder, StyleSheet, View } from 'react-native';
+import { clampSplitFraction, SPLIT_HANDLE_PX } from '../dates';
 import { colors } from '../theme';
 
 type Props = {
@@ -25,7 +26,7 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
       onPanResponderMove: (_, gesture) => {
         if (!height.current) return;
         const next = start.current - gesture.dy / height.current;
-        onChange(Math.min(0.85, Math.max(0.2, next)));
+        onChange(clampSplitFraction(next, height.current));
       },
     }),
   ).current;
@@ -45,9 +46,9 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
         accessibilityLabel="Resize list and calendar"
       >
         <View style={styles.grip} testID="split-grip">
-          <View style={[styles.bar, styles.barShort]} />
           <View style={styles.bar} />
-          <View style={[styles.bar, styles.barShort]} />
+          <View style={styles.bar} />
+          <View style={styles.bar} />
         </View>
       </View>
       <View style={[styles.pane, { flex: split }]}>{bottom}</View>
@@ -63,26 +64,23 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   handle: {
-    height: 28,
+    height: SPLIT_HANDLE_PX,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.navbar,
     zIndex: 4,
   },
   grip: {
-    width: 36,
-    height: 14,
+    width: SPLIT_HANDLE_PX,
+    height: SPLIT_HANDLE_PX,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 4,
   },
   bar: {
     width: 36,
-    height: 1.5,
+    height: 2,
     backgroundColor: colors.ink,
     borderRadius: 1,
-  },
-  barShort: {
-    width: 24,
   },
 });
