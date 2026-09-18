@@ -95,6 +95,16 @@ export function TaskRow({
               startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY);
             }
           }}
+          {...(Platform.OS === 'web'
+            ? ({
+                onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
+                  startPointerDrag(
+                    event.nativeEvent?.pageX ?? event.clientX ?? 0,
+                    event.nativeEvent?.pageY ?? event.clientY ?? 0,
+                  );
+                },
+              } as object)
+            : {})}
           style={styles.body}
           testID={`task-open-${task.id}`}
         >

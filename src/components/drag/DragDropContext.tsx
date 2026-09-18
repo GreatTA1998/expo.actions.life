@@ -273,6 +273,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const move = (event: PointerEvent) => {
       if (!dragRef.current) return;
+      if (dragRef.current.active) event.preventDefault();
       moveDrag(event.clientX, event.clientY);
     };
     const up = () => {
@@ -280,13 +281,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       if (dragRef.current.active) endDrag();
       else cancelDrag();
     };
-    window.addEventListener('pointermove', move);
+    window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
     return () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
     };
   }, [cancelDrag, endDrag, moveDrag]);
 
