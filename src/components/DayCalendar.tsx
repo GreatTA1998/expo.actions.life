@@ -535,8 +535,11 @@ function DayColumn({
   const ref = useRef<View>(null);
   const colY = useRef(0);
   const lock = useRef(createComposerLock()).current;
+  const inputRef = useRef<TextInput>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
   const composingRef = useRef(!!composer);
   composingRef.current = !!composer;
   const wasComposing = useRef(!!composer);
@@ -587,8 +590,22 @@ function DayColumn({
     if (!alive.current) return;
     if (!lock.commit()) return;
     const name = draftRef.current.trim();
-    if (name && composer) onCreate(composer.time, name, keepOpen);
+    const slot = composerRef.current;
+    if (name && slot) onCreate(slot.time, name, keepOpen);
     else if (composingRef.current) onCompose(null);
+  }
+
+  function openAt(pageY: number, columnY: number) {
+    const time = timeAt(pageY, columnY);
+    const current = composerRef.current;
+    if (current) {
+      lock.skipNextBlur();
+      if (current.time !== time) onCompose({ iso, time });
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    onDraft('');
+    onCompose({ iso, time });
   }
 
   return (
@@ -607,11 +624,13 @@ function DayColumn({
           zoneId,
         );
       }}
+      onPressIn={() => {
+        if (composerRef.current) lock.skipNextBlur();
+      }}
       onPress={(event) => {
+        const pageY = event.nativeEvent.pageY;
         measureNode(ref.current, (rect) => {
-          const time = timeAt(event.nativeEvent.pageY, rect.y);
-          if (!composer) onDraft('');
-          onCompose({ iso, time });
+          openAt(pageY, rect.y);
         });
       }}
       style={[styles.column, { width, height }]}
@@ -655,13 +674,15 @@ function DayColumn({
           />
         ))}
       {composer ? (
-        <View
+        <Pressable
+          onPress={(event) => event.stopPropagation()}
           style={[
             styles.calComposer,
             { top: (parseMinutes(composer.time) / 60) * pixelsPerHour },
           ]}
         >
           <TextInput
+            ref={inputRef}
             autoFocus
             blurOnSubmit={false}
             value={draft}
@@ -678,7 +699,7 @@ function DayColumn({
               })
             }
           />
-        </View>
+        </Pressable>
       ) : null}
     </Pressable>
   );

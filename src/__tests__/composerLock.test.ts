@@ -107,6 +107,27 @@ test('empty blur after composer moved does not cancel the next slot', async () =
   lock.dispose();
 });
 
+test('skipNextBlur drops a pending blur and the blur scheduled during relocate', async () => {
+  const lock = createComposerLock();
+  let ran = 0;
+  lock.scheduleBlur(() => {
+    ran += 1;
+  });
+  lock.skipNextBlur();
+  lock.scheduleBlur(() => {
+    ran += 1;
+  });
+  await flush(COMPOSER_UNLOCK_MS + 5);
+  assert.equal(ran, 0);
+
+  lock.scheduleBlur(() => {
+    ran += 1;
+  });
+  await flush(COMPOSER_BLUR_MS + 5);
+  assert.equal(ran, 1);
+  lock.dispose();
+});
+
 test('unmount dispose ignores a later blur commit', async () => {
   const lock = createComposerLock();
   let ran = false;

@@ -70,17 +70,22 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
   const parent = live.parentID ? store.task(live.parentID) : undefined;
   const parentWord = parent?.name.trim().split(/\s+/)[0];
 
+  async function persistEdits() {
+    const nextName = name.trim() || 'Untitled';
+    if (nextName !== live.name) await store.rename(live.id, nextName);
+    if (notes !== live.notes) await store.setNotes(live.id, notes);
+  }
+
+  function openRelated(id: string) {
+    void persistEdits().then(() => onOpenTask(id));
+  }
+
   return (
     <Modal
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={() => {
-        void (async () => {
-          const nextName = name.trim() || 'Untitled';
-          if (nextName !== live.name) await store.rename(live.id, nextName);
-          if (notes !== live.notes) await store.setNotes(live.id, notes);
-          onClose();
-        })();
+        void persistEdits().then(onClose);
       }}
     >
       <KeyboardAvoidingView
@@ -94,12 +99,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
         <View style={styles.topBar}>
           <Pressable
             onPress={() => {
-              void (async () => {
-                const nextName = name.trim() || 'Untitled';
-                if (nextName !== live.name) await store.rename(live.id, nextName);
-                if (notes !== live.notes) await store.setNotes(live.id, notes);
-                onClose();
-              })();
+              void persistEdits().then(onClose);
             }}
             hitSlop={8}
           >
@@ -111,7 +111,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
           {parent && parentWord ? (
             <Pressable
               testID="task-detail-parent"
-              onPress={() => onOpenTask(parent.id)}
+              onPress={() => openRelated(parent.id)}
               style={styles.parentBadge}
             >
               <Text style={styles.parentBadgeText}>{parentWord}</Text>
@@ -238,7 +238,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
 
           <Text style={styles.section}>Subtasks</Text>
           {children.map((child) => (
-            <Pressable key={child.id} onPress={() => onOpenTask(child.id)} style={styles.child}>
+            <Pressable key={child.id} onPress={() => openRelated(child.id)} style={styles.child}>
               <Text style={[styles.childName, child.isDone && styles.done]}>{child.name}</Text>
             </Pressable>
           ))}
