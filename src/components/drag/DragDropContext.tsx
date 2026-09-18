@@ -125,6 +125,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [drag, setDrag] = useState<DragSession | null>(emptySession);
   const [bestId, setBestId] = useState('');
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [ghostTransform, setGhostTransform] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
   const pendingActivate = useRef(false);
@@ -155,13 +156,17 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
 
   const paintGhost = useCallback((session: DragSession) => {
     const local = windowToLayer(session.x, session.y, layerOrigin.current);
-    ghostRef.current?.setNativeProps?.({
-      style: {
-        width: session.width,
-        height: session.height,
-        transform: [{ translateX: local.x }, { translateY: local.y }],
-      },
-    });
+    if (Platform.OS === 'web') {
+      setGhostTransform({ x: local.x, y: local.y });
+    } else {
+      ghostRef.current?.setNativeProps?.({
+        style: {
+          width: session.width,
+          height: session.height,
+          transform: [{ translateX: local.x }, { translateY: local.y }],
+        },
+      });
+    }
   }, []);
 
   const refreshZones = useCallback(() => {
@@ -527,7 +532,13 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
             ref={ghostRef}
             testID="drag-ghost"
             pointerEvents="none"
-            style={[styles.ghost, { width: drag.width, height: drag.height }]}
+            style={[
+              styles.ghost,
+              { width: drag.width, height: drag.height },
+              Platform.OS === 'web' && {
+                transform: [{ translateX: ghostTransform.x }, { translateY: ghostTransform.y }],
+              },
+            ]}
           >
             <Text testID="drop-best" numberOfLines={1} style={styles.ghostMeta}>
               {bestId}
