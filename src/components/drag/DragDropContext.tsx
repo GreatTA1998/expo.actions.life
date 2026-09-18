@@ -324,14 +324,18 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       const current = dragRef.current;
       if (!current?.active) return;
       pendingMove.current = { x: pageX, y: pageY };
-      // Paint immediately from the latest sample so the ghost tracks the finger.
-      paintGhost({
+      // Keep dragRef in sync with the live pointer. paintGhost on web writes
+      // ghostTransform from this session; useLayoutEffect(bestId) re-paints from
+      // dragRef and must not regress to the last rAF position.
+      const live: DragSession = {
         ...current,
         pointerX: pageX,
         pointerY: pageY,
         x: pageX - current.offsetX,
         y: pageY - current.offsetY,
-      });
+      };
+      dragRef.current = live;
+      paintGhost(live);
       if (!moveRaf.current) {
         moveRaf.current = requestAnimationFrame(flushMove);
       }
@@ -495,8 +499,8 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
 
   const nativeHolding = () => Platform.OS !== 'web' && (pendingActivate.current || !!dragRef.current?.active);
 
-  // Position is owned by setNativeProps only. Putting translate in React style
-  // lets zone-highlight / rAF setDrag re-renders snap the ghost back to a stale spot.
+  // Native: setNativeProps only (no React transform). Web: ghostTransform state.
+  // dragRef stays live with the pointer so this re-paint cannot regress web state.
   useLayoutEffect(() => {
     const session = dragRef.current;
     if (session?.active) paintGhost(session);
