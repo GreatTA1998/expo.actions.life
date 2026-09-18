@@ -105,7 +105,8 @@ export function DayCalendar({
       style={styles.wrap}
       testID="day-calendar"
       onLayout={(event) => {
-        const next = Math.max(140, event.nativeEvent.layout.width - TIME_AXIS - 28);
+        const available = Math.max(160, event.nativeEvent.layout.width - TIME_AXIS);
+        const next = Math.round(available * 0.72);
         if (Math.abs(next - columnWidth) > 8) setColumnWidth(next);
       }}
     >
@@ -123,9 +124,10 @@ export function DayCalendar({
         {days.map((iso) => {
           const isToday = iso === todayISO;
           return (
-            <View key={`h-${iso}`} style={[styles.dayHead, { width: columnWidth }, isToday && styles.dayHeadToday]}>
-              <Text style={[styles.dow, isToday && styles.dowToday]}>{weekdayShort(iso)}</Text>
-              <Text style={[styles.dom, isToday && styles.domToday]}>{dayNumber(iso)}</Text>
+            <View key={`h-${iso}`} style={[styles.dayHead, { width: columnWidth }]}>
+              <Text style={[styles.dow, isToday && styles.dowToday]}>
+                {`${weekdayShort(iso)} ${dayNumber(iso)}`}
+              </Text>
             </View>
           );
         })}
@@ -375,28 +377,22 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   dayHead: {
-    height: 40,
-    alignItems: 'center',
+    height: 36,
+    alignItems: 'flex-start',
     justifyContent: 'center',
+    paddingLeft: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  dayHeadToday: {
-    backgroundColor: colors.ink,
-    borderRadius: 10,
-  },
   dow: {
-    color: colors.muted,
-    fontSize: type.micro,
-    textTransform: 'uppercase',
-  },
-  dowToday: { color: colors.card },
-  dom: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: type.small,
     fontWeight: '600',
   },
-  domToday: { color: colors.card },
+  dowToday: {
+    color: colors.ink,
+    fontWeight: '800',
+  },
   gridScroll: {
     flex: 1,
     overflow: 'hidden',

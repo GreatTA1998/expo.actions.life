@@ -101,7 +101,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
             }}
             hitSlop={8}
           >
-            <Text style={styles.link}>Close</Text>
+            <Text style={styles.link} testID="task-detail-close">Close</Text>
           </Pressable>
           {busy ? <ActivityIndicator color={colors.accent} /> : <View />}
         </View>
