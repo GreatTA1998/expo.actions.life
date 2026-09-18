@@ -1,5 +1,6 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useEffect, useRef } from 'react';
+import { isPastDate, relativeDateChip } from '../dates';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
@@ -13,7 +14,7 @@ type Props = {
   depth: number;
   composer: ComposerSlot;
   onCompose: (slot: ComposerSlot) => void;
-  onCreate: (slot: { parentID: string; index: number }, name: string) => void;
+  onCreate: (slot: { parentID: string; index: number }, name: string, extras?: { duration?: number }) => void;
   onToggleDone: (id: string) => void;
   onToggleCollapsed: (id: string) => void;
   onOpen: (id: string) => void;
@@ -35,7 +36,8 @@ export function TaskRow({
   const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
   const rowRef = useRef<View>(null);
   const hasChildren = children.length > 0;
-  const dateBadge = task.startDateISO ? task.startDateISO.slice(5) : '';
+  const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
+  const datePast = isPastDate(task.startDateISO);
   const nestId = `nest-${task.id}`;
   const highlighted = bestId === nestId;
 
@@ -122,11 +124,16 @@ export function TaskRow({
         >
           <View style={styles.bodyText}>
             <View style={styles.nameRow}>
-              <Text style={[styles.name, task.isDone && styles.nameDone]} numberOfLines={2}>
+              <Text
+                style={[styles.name, depth > 0 ? styles.nameNested : styles.nameRoot, task.isDone && styles.nameDone]}
+                numberOfLines={2}
+              >
                 {task.name || 'Untitled'}
               </Text>
-              {task.startDateISO ? <Text style={styles.calGlyph}>▦</Text> : null}
-              {dateBadge ? <Text style={styles.badge}>{dateBadge}</Text> : null}
+              {task.startDateISO ? <Text style={[styles.calGlyph, datePast && styles.calGlyphOverdue]}>▦</Text> : null}
+              {dateBadge ? (
+                <Text style={[styles.badge, datePast ? styles.badgePast : styles.badgeSoon]}>{dateBadge}</Text>
+              ) : null}
             </View>
             {task.notes ? (
               <Text style={styles.notes} numberOfLines={2}>
@@ -150,7 +157,7 @@ export function TaskRow({
                 depth={depth + 1}
                 composing={composer?.parentID === task.id && composer.index === i}
                 onCompose={() => onCompose({ parentID: task.id, index: i })}
-                onSubmit={(name) => onCreate({ parentID: task.id, index: i }, name)}
+                onSubmit={(name, extras) => onCreate({ parentID: task.id, index: i }, name, extras)}
                 onCancel={() => onCompose(null)}
               />
               <TaskRow
@@ -173,7 +180,7 @@ export function TaskRow({
             depth={depth + 1}
             composing={composer?.parentID === task.id && composer.index === children.length}
             onCompose={() => onCompose({ parentID: task.id, index: children.length })}
-            onSubmit={(name) => onCreate({ parentID: task.id, index: children.length }, name)}
+            onSubmit={(name, extras) => onCreate({ parentID: task.id, index: children.length }, name, extras)}
             onCancel={() => onCompose(null)}
           />
         </View>
@@ -242,7 +249,14 @@ const styles = StyleSheet.create({
   name: {
     flex: 1,
     color: colors.ink,
+  },
+  nameRoot: {
     fontSize: type.body,
+    fontWeight: '600',
+  },
+  nameNested: {
+    fontSize: 14,
+    fontWeight: '400',
   },
   nameDone: {
     color: colors.done,
@@ -252,16 +266,31 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 11,
   },
+  calGlyphOverdue: {
+    color: colors.danger,
+  },
   notes: {
     marginTop: 2,
+    marginLeft: 2,
     color: colors.muted,
-    fontSize: type.small,
+    fontSize: 12,
     lineHeight: 16,
   },
   badge: {
-    color: colors.muted,
     fontSize: type.micro,
     letterSpacing: 0.3,
+    overflow: 'hidden',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  badgePast: {
+    color: '#808080',
+    backgroundColor: 'rgb(231,231,231)',
+  },
+  badgeSoon: {
+    color: '#ffffff',
+    backgroundColor: 'hsla(0, 0%, 0%, 0.6)',
   },
   menuHit: {
     width: 28,

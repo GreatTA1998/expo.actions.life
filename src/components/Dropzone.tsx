@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { matchHabitTemplates } from '../services/seed';
 import { colors, type } from '../theme';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
+
+type CreateExtras = { duration?: number };
 
 type Props = {
   zoneId: string;
@@ -10,7 +13,7 @@ type Props = {
   depth: number;
   composing: boolean;
   onCompose: () => void;
-  onSubmit: (name: string) => void;
+  onSubmit: (name: string, extras?: CreateExtras) => void;
   onCancel: () => void;
 };
 
@@ -26,9 +29,11 @@ export function Dropzone({
 }: Props) {
   const { registerZone, bestId, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
+  const picking = useRef(false);
   const [draft, setDraft] = useState('');
   const root = depth === 0;
   const highlighted = bestId === zoneId;
+  const templates = matchHabitTemplates(draft);
 
   useEffect(() => {
     return registerZone({
@@ -41,6 +46,11 @@ export function Dropzone({
   useEffect(() => {
     if (!composing) setDraft('');
   }, [composing]);
+
+  function commit(name: string, extras?: CreateExtras) {
+    if (name) onSubmit(name, extras);
+    else onCancel();
+  }
 
   return (
     <View
@@ -57,25 +67,44 @@ export function Dropzone({
       ]}
     >
       {composing ? (
-        <TextInput
-          autoFocus
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="New task"
-          placeholderTextColor={colors.faint}
-          style={styles.input}
-          onSubmitEditing={() => {
-            const name = draft.trim();
-            if (name) onSubmit(name);
-            else onCancel();
-          }}
-          onBlur={() => {
-            const name = draft.trim();
-            if (name) onSubmit(name);
-            else onCancel();
-          }}
-          returnKeyType="done"
-        />
+        <View style={styles.composer}>
+          <TextInput
+            autoFocus
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="New task"
+            placeholderTextColor={colors.faint}
+            style={[styles.input, root ? styles.inputRoot : styles.inputNested]}
+            onSubmitEditing={() => commit(draft.trim())}
+            onBlur={() => {
+              setTimeout(() => {
+                if (picking.current) return;
+                commit(draft.trim());
+              }, 50);
+            }}
+            returnKeyType="done"
+          />
+          {templates.length ? (
+            <View style={styles.menu} testID="template-menu">
+              {templates.map((habit) => (
+                <Pressable
+                  key={habit.id}
+                  testID={`template-${habit.id}`}
+                  onPressIn={() => {
+                    picking.current = true;
+                  }}
+                  onPress={() => {
+                    commit(habit.name, { duration: habit.duration });
+                    picking.current = false;
+                  }}
+                  style={styles.menuItem}
+                >
+                  <Text style={styles.menuText}>{habit.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
       ) : (
         <Pressable
           accessibilityRole="button"
@@ -112,6 +141,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.composer,
     backgroundColor: colors.card,
+    zIndex: 6,
+  },
+  composer: {
+    flex: 1,
   },
   hit: {
     flex: 1,
@@ -128,6 +161,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     color: colors.ink,
+  },
+  inputRoot: {
     fontSize: type.body,
+  },
+  inputNested: {
+    fontSize: 14,
+  },
+  menu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    width: 200,
+    maxHeight: 220,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+    zIndex: 20,
+  },
+  menuItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  menuText: {
+    color: colors.ink,
+    fontSize: 12,
   },
 });

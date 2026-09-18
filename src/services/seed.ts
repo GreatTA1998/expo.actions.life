@@ -8,6 +8,12 @@ export const HABIT_TEMPLATES = [
   { id: 'template-habit-laundry', name: 'Dry laundry', duration: 10, rr: 'Weekly on Sunday' },
 ] as const;
 
+export function matchHabitTemplates(query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  return HABIT_TEMPLATES.filter((habit) => habit.name.toLowerCase().includes(needle));
+}
+
 const PHOTOS = {
   olaDrawingByDad: 'https://i.imgur.com/Pu7PxCi.jpeg',
   redCrownBird: 'https://i.imgur.com/waIioxd.jpeg',

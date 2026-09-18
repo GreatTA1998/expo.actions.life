@@ -125,13 +125,14 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
               }}
               onOpen={onOpen}
               onMenu={onMenu}
-              onCreate={(slot, name) => {
+              onCreate={(slot, name, extras) => {
                 void store
                   .create({
                     name,
                     parentID: slot.parentID || undefined,
                     onList: true,
                     index: slot.index,
+                    duration: extras?.duration,
                   })
                   .then(() => {
                     if (!slot.parentID) setRevealTopToken((value) => value + 1);

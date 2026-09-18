@@ -202,7 +202,7 @@ export function DayCalendar({
                 key={hour}
                 style={[styles.hourLabel, { height: pixelsPerHour }, hour === 9 && styles.hourLabelMorning]}
               >
-                {hour === 0 ? '' : `${hour}`}
+                {hour === 0 ? '' : String(hour).padStart(2, '0')}
               </Text>
             ))}
           </View>

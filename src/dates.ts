@@ -107,3 +107,25 @@ export function isValidISODate(dateStr: string): boolean {
   const date = new Date(y, m - 1, d);
   return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
 }
+
+export function daysBetween(fromISO: string, toISO: string): number {
+  const from = new Date(`${fromISO}T00:00:00`);
+  const to = new Date(`${toISO}T00:00:00`);
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+/** Web DateBadge: today / tomorrow / `8d` / `3mo` / `1y`, with ago vs in. */
+export function relativeDateChip(iso: string, today = todayISO()): string {
+  if (!iso) return 'select date';
+  const days = daysBetween(today, iso);
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  const span = Math.abs(days);
+  const amount =
+    span < 28 ? `${span}d` : span < 365 ? `${Math.round(span / 30)}mo` : `${Math.round(span / 365)}y`;
+  return days < 0 ? `${amount} ago` : `in ${amount}`;
+}
+
+export function isPastDate(iso: string, today = todayISO()): boolean {
+  return !!iso && daysBetween(today, iso) < 0;
+}

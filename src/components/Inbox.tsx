@@ -13,7 +13,7 @@ type Props = {
   onToggleCollapsed: (id: string) => void;
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
-  onCreate: (slot: { parentID: string; index: number }, name: string) => void;
+  onCreate: (slot: { parentID: string; index: number }, name: string, extras?: { duration?: number }) => void;
   revealTopToken?: number;
 };
 
@@ -80,8 +80,8 @@ export function Inbox({
               depth={0}
               composing={composer?.parentID === '' && composer.index === i}
               onCompose={() => setComposer({ parentID: '', index: i })}
-              onSubmit={(name) => {
-                onCreate({ parentID: '', index: i }, name);
+              onSubmit={(name, extras) => {
+                onCreate({ parentID: '', index: i }, name, extras);
                 setComposer({ parentID: '', index: i + 1 });
               }}
               onCancel={() => setComposer(null)}
@@ -91,8 +91,8 @@ export function Inbox({
               depth={0}
               composer={composer}
               onCompose={setComposer}
-              onCreate={(slot, name) => {
-                onCreate(slot, name);
+              onCreate={(slot, name, extras) => {
+                onCreate(slot, name, extras);
                 setComposer({ parentID: slot.parentID, index: slot.index + 1 });
               }}
               onToggleDone={onToggleDone}
@@ -109,8 +109,8 @@ export function Inbox({
           depth={0}
           composing={composer?.parentID === '' && composer.index === forest.length}
           onCompose={() => setComposer({ parentID: '', index: forest.length })}
-          onSubmit={(name) => {
-            onCreate({ parentID: '', index: forest.length }, name);
+          onSubmit={(name, extras) => {
+            onCreate({ parentID: '', index: forest.length }, name, extras);
             setComposer({ parentID: '', index: forest.length + 1 });
           }}
           onCancel={() => setComposer(null)}

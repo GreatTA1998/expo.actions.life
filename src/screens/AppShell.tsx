@@ -62,7 +62,7 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   }
 
   return (
-    <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.brand}>actions.life</Text>
@@ -73,7 +73,7 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
         </Pressable>
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, { paddingBottom: insets.bottom }]}>
         {tab === 'calendar' ? (
           <HomeScreen store={store} onOpen={setOpenId} onMenu={setMenuTask} />
         ) : null}
@@ -88,20 +88,20 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
             onLinkGoogle={() => void linkGoogle()}
           />
         ) : null}
+
+        {undo ? (
+          <Pressable
+            style={styles.undo}
+            onPress={() => {
+              void undo.run().then(() => store.clearUndo());
+            }}
+          >
+            <Text style={styles.undoText}>{undo.label} — Undo</Text>
+          </Pressable>
+        ) : null}
+
+        <TabBar tab={tab} onChange={setTab} />
       </View>
-
-      {undo ? (
-        <Pressable
-          style={styles.undo}
-          onPress={() => {
-            void undo.run().then(() => store.clearUndo());
-          }}
-        >
-          <Text style={styles.undoText}>{undo.label} — Undo</Text>
-        </Pressable>
-      ) : null}
-
-      <TabBar tab={tab} onChange={setTab} />
 
       {openTask ? (
         <TaskDetailModal
