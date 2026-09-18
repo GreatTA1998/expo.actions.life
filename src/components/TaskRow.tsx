@@ -93,10 +93,19 @@ export function TaskRow({
           style={styles.body}
           testID={`task-open-${task.id}`}
         >
-          <Text style={[styles.name, task.isDone && styles.nameDone]} numberOfLines={2}>
-            {task.name || 'Untitled'}
-          </Text>
-          {dateBadge ? <Text style={styles.badge}>{dateBadge}</Text> : null}
+          <View style={styles.bodyText}>
+            <View style={styles.nameRow}>
+              <Text style={[styles.name, task.isDone && styles.nameDone]} numberOfLines={2}>
+                {task.name || 'Untitled'}
+              </Text>
+              {dateBadge ? <Text style={styles.badge}>{dateBadge}</Text> : null}
+            </View>
+            {task.notes ? (
+              <Text style={styles.notes} numberOfLines={2}>
+                {task.notes}
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
         <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit} testID={`task-menu-${task.id}`}>
           <Text style={styles.menu}>⋯</Text>
@@ -190,6 +199,13 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  bodyText: {
+    flex: 1,
+    paddingVertical: 2,
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -202,6 +218,12 @@ const styles = StyleSheet.create({
   nameDone: {
     color: colors.done,
     textDecorationLine: 'line-through',
+  },
+  notes: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: type.small,
+    lineHeight: 16,
   },
   badge: {
     color: colors.muted,

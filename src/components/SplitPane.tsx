@@ -44,7 +44,7 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
         testID="split-handle"
         accessibilityLabel="Resize list and calendar"
       >
-        <View style={styles.grip}>
+        <View style={styles.grip} testID="split-grip">
           <View style={[styles.bar, styles.barShort]} />
           <View style={styles.bar} />
           <View style={[styles.bar, styles.barShort]} />
@@ -71,19 +71,18 @@ const styles = StyleSheet.create({
   },
   grip: {
     width: 36,
-    height: 12,
-    flexDirection: 'row',
+    height: 14,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
   },
   bar: {
-    width: 1.5,
-    height: 12,
+    width: 36,
+    height: 1.5,
     backgroundColor: colors.ink,
     borderRadius: 1,
   },
   barShort: {
-    height: 8,
+    width: 24,
   },
 });
