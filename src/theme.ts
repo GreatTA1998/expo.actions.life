@@ -13,6 +13,9 @@ export const colors = {
   done: '#8a8178',
   handle: '#cfc4ba',
   border: 'rgba(44, 36, 28, 0.12)',
+  dropPreview: 'rgba(74, 103, 65, 0.15)',
+  dropBorder: 'rgba(74, 103, 65, 0.6)',
+  composer: '#2757cf',
 } as const;
 
 export const space = {

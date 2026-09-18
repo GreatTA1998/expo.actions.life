@@ -46,10 +46,25 @@ export function dayNumber(iso: string): string {
 
 export function surroundingDays(centerISO: string, radius = 7): string[] {
   const days: string[] = [];
-  for (let i = -radius; i <= radius; i += 1) {
-    days.push(addDaysISO(centerISO, i));
-  }
+  for (let i = -radius; i <= radius; i += 1) days.push(addDaysISO(centerISO, i));
   return days;
+}
+
+/** Inclusive day window used by the partial-infinite calendar. */
+export function dayWindow(centerISO: string, past: number, future: number): string[] {
+  const days: string[] = [];
+  for (let i = -past; i <= future; i += 1) days.push(addDaysISO(centerISO, i));
+  return days;
+}
+
+export function monthYearLabel(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+export function snapMinutes(total: number, interval = 15): number {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
+  return Math.round(clamped / interval) * interval;
 }
 
 export function parseMinutes(hhmm: string): number {

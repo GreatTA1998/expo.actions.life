@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Modal, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { TabBar, type AppTab } from '../components/TabBar';
 import { useAppInsets } from '../safeArea';
@@ -11,7 +11,7 @@ import {
 } from '../services/authSession';
 import type { TaskTreeStore } from '../services/taskStore';
 import { colors, type } from '../theme';
-import { HomeScreen, type HomeScreenHandle } from './HomeScreen';
+import { HomeScreen } from './HomeScreen';
 import { PhotosScreen } from './PhotosScreen';
 import { RoutinesScreen } from './RoutinesScreen';
 import { ScheduleScreen } from './ScheduleScreen';
@@ -30,8 +30,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   const [tab, setTab] = useState<AppTab>('calendar');
   const [openId, setOpenId] = useState<string | null>(null);
   const [menuTask, setMenuTask] = useState<TaskRecord | null>(null);
-  const [dragging, setDragging] = useState<TaskRecord | null>(null);
-  const homeRef = useRef<HomeScreenHandle>(null);
   const [request, , promptAsync] = useGoogleAuthRequest();
   const openTask = openId ? store.task(openId) : undefined;
   const undo = store.lastUndo;
@@ -77,15 +75,7 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
 
       <View style={styles.body}>
         {tab === 'calendar' ? (
-          <HomeScreen
-            ref={homeRef}
-            store={store}
-            dragging={dragging}
-            onDragStart={setDragging}
-            onDragEnd={() => setDragging(null)}
-            onOpen={setOpenId}
-            onMenu={setMenuTask}
-          />
+          <HomeScreen store={store} onOpen={setOpenId} onMenu={setMenuTask} />
         ) : null}
         {tab === 'schedule' ? <ScheduleScreen store={store} onOpenTask={setOpenId} /> : null}
         {tab === 'routines' ? <RoutinesScreen store={store} /> : null}
@@ -99,16 +89,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
           />
         ) : null}
       </View>
-
-      {dragging && tab === 'calendar' ? (
-        <Pressable
-          style={styles.dragCatch}
-          onPress={(event) => {
-            homeRef.current?.dropAt(event.nativeEvent.pageX, event.nativeEvent.pageY, dragging);
-            setDragging(null);
-          }}
-        />
-      ) : null}
 
       {undo ? (
         <Pressable
@@ -213,14 +193,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
                   }
                 />
                 <Action
-                  label="Drag to calendar"
-                  onPress={() => {
-                    setDragging(menuTask);
-                    setMenuTask(null);
-                    setTab('calendar');
-                  }}
-                />
-                <Action
                   label={menuTask.onList ? 'Archive' : 'Unarchive'}
                   onPress={() =>
                     void (menuTask.onList ? store.archive(menuTask.id) : store.unarchive(menuTask.id)).then(() =>
@@ -258,14 +230,6 @@ const styles = StyleSheet.create({
   sub: { color: colors.muted, fontSize: type.micro, marginTop: 2 },
   link: { color: colors.accent, fontWeight: '600' },
   body: { flex: 1 },
-  dragCatch: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 20,
-  },
   undo: {
     marginHorizontal: 12,
     marginBottom: 8,

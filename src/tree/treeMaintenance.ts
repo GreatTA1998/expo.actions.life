@@ -141,6 +141,21 @@ export function nextOrderValue(maxOrderValue: number): number {
   return maxOrderValue + 1;
 }
 
+/** Same placement math as web DragDropContext.computeOrderValue. */
+export function computeOrderValue(index: number, rooms: { orderValue: number }[]): number {
+  const n = rooms.length;
+  if (n === 0) return 1;
+  if (index <= 0) return rooms[0].orderValue / 1.1;
+  if (index >= n) return rooms[n - 1].orderValue + 1;
+  return (rooms[index - 1].orderValue + rooms[index].orderValue) / 2;
+}
+
+export function listSiblings(parentID: string, docs: TaskRecord[]): TaskRecord[] {
+  return docs
+    .filter((doc) => doc.parentID === parentID && !doc.isTombstone && doc.onList)
+    .sort((a, b) => a.orderValue - b.orderValue);
+}
+
 export function previousSibling(id: string, forest: TaskTree[]): TaskRecord | null {
   return adjacentSibling(id, forest, -1);
 }

@@ -25,7 +25,7 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
       onPanResponderMove: (_, gesture) => {
         if (!height.current) return;
         const next = start.current - gesture.dy / height.current;
-        onChange(Math.min(0.85, Math.max(0.25, next)));
+        onChange(Math.min(0.85, Math.max(0.2, next)));
       },
     }),
   ).current;
@@ -38,8 +38,17 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
       }}
     >
       <View style={[styles.pane, { flex: 1 - split }]}>{top}</View>
-      <View {...pan.panHandlers} style={styles.handle}>
-        <View style={styles.pill} />
+      <View
+        {...pan.panHandlers}
+        style={styles.handle}
+        testID="split-handle"
+        accessibilityLabel="Resize list and calendar"
+      >
+        <View style={styles.grip}>
+          <View style={[styles.bar, styles.barShort]} />
+          <View style={styles.bar} />
+          <View style={[styles.bar, styles.barShort]} />
+        </View>
       </View>
       <View style={[styles.pane, { flex: split }]}>{bottom}</View>
     </View>
@@ -54,18 +63,27 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   handle: {
-    height: 18,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.navbar,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    zIndex: 4,
   },
-  pill: {
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.handle,
+  grip: {
+    width: 36,
+    height: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  bar: {
+    width: 1.5,
+    height: 12,
+    backgroundColor: colors.ink,
+    borderRadius: 1,
+  },
+  barShort: {
+    height: 8,
   },
 });

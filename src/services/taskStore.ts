@@ -7,7 +7,9 @@ import {
   applyDeletion,
   adjacentSibling,
   applyReparent,
+  computeOrderValue,
   inboxForest,
+  listSiblings,
   nextOrderValue,
   parentIDOf,
   previousSibling,
@@ -33,6 +35,10 @@ export type CreateTaskInput = {
   tagIDs?: string[];
   /** Root inbox rows go above the fold when set to `start`. */
   place?: 'start' | 'end';
+  /** Explicit sibling rank (web dropzone / popover input). */
+  orderValue?: number;
+  /** Insert among current siblings at this index (0 = first). */
+  index?: number;
 };
 
 export function mergeTaskRecords(disk: TaskRecord[], memory: TaskRecord[]): TaskRecord[] {
@@ -143,10 +149,18 @@ export class TaskTreeStore {
       .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
   }
 
+  siblingsOnList(parentID: string): TaskRecord[] {
+    return listSiblings(parentID, this.records);
+  }
+
   async create(input: CreateTaskInput, options?: { persist?: boolean }): Promise<TaskRecord> {
     const parentID = input.parentID ?? '';
     let order: number;
-    if (input.place === 'start') {
+    if (typeof input.orderValue === 'number') {
+      order = input.orderValue;
+    } else if (typeof input.index === 'number') {
+      order = computeOrderValue(input.index, this.siblingsOnList(parentID));
+    } else if (input.place === 'start') {
       const siblings = this.records.filter((doc) => doc.parentID === parentID && !doc.isTombstone);
       const min = siblings.reduce((lowest, doc) => Math.min(lowest, doc.orderValue), 0);
       order = min - 1;
@@ -275,9 +289,64 @@ export class TaskTreeStore {
   }
 
   async nest(id: string, underParentID: string): Promise<void> {
-    this.records = applyReparent(id, underParentID, this.records);
+    await this.placeOnList(id, { parentID: underParentID, index: 0 });
+  }
+
+  /**
+   * Web placeOnList: reparent + orderValue + onList.
+   * `unschedule` clears calendar fields (drag from calendar onto the list).
+   */
+  async placeOnList(
+    id: string,
+    opts: { parentID: string; index: number; unschedule?: boolean },
+  ): Promise<boolean> {
+    const current = this.task(id);
+    if (!current) return false;
+    if (opts.parentID === id) return false;
+    const rooms = this.siblingsOnList(opts.parentID);
+    const orderValue = computeOrderValue(opts.index, rooms);
+    if (current.parentID !== opts.parentID) {
+      const before = current.parentID;
+      this.records = applyReparent(id, opts.parentID, this.records);
+      if (this.task(id)?.parentID === before && opts.parentID !== before) return false;
+    }
+    if (opts.unschedule) {
+      this.records = applyDateChange(id, '', this.records);
+    }
+    this.records = this.records.map((doc) => {
+      if (doc.id !== id) return doc;
+      return {
+        ...doc,
+        orderValue,
+        onList: true,
+        ...(opts.unschedule ? { startTime: '', startDateISO: '' } : {}),
+        pendingSync: true,
+        updatedAt: Date.now(),
+      };
+    });
+    const parent = opts.parentID ? this.task(opts.parentID) : undefined;
+    if (parent?.isCollapsed) {
+      this.records = this.records.map((doc) =>
+        doc.id === parent.id ? { ...doc, isCollapsed: false, pendingSync: true, updatedAt: Date.now() } : doc,
+      );
+    }
+    this.profile = {
+      ...this.profile,
+      maxOrderValue: Math.max(this.profile.maxOrderValue, orderValue),
+      updatedAt: Date.now(),
+      pendingSync: true,
+    };
     await this.sync.enqueue(this.uid, 'batchTree', 'tasks', id);
     await this.persist();
+    return true;
+  }
+
+  /** Web placeOnCal. Nested calendar blocks become roots. */
+  async placeOnCal(id: string, dayISO: string, time: string, unparent = false): Promise<void> {
+    if (unparent) {
+      this.records = applyReparent(id, '', this.records);
+    }
+    await this.schedule(id, dayISO, time);
   }
 
   async indent(id: string): Promise<boolean> {

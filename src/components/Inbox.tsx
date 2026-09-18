@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
-import { TaskRow } from './TaskRow';
+import { Dropzone } from './Dropzone';
+import { TaskRow, type ComposerSlot } from './TaskRow';
 
 type Props = {
   forest: TaskTree[];
@@ -10,8 +11,7 @@ type Props = {
   onToggleCollapsed: (id: string) => void;
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
-  onDragStart?: (task: TaskRecord) => void;
-  /** Bump after creating a root task so the new row is not left under the composer. */
+  onCreate: (slot: { parentID: string; index: number }, name: string) => void;
   revealTopToken?: number;
 };
 
@@ -21,10 +21,11 @@ export function Inbox({
   onToggleCollapsed,
   onOpen,
   onMenu,
-  onDragStart,
+  onCreate,
   revealTopToken,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const [composer, setComposer] = useState<ComposerSlot>(null);
 
   useEffect(() => {
     if (!revealTopToken) return;
@@ -32,30 +33,64 @@ export function Inbox({
   }, [revealTopToken]);
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.heading}>Inbox</Text>
+    <View style={styles.wrap} testID="inbox">
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onScroll={() => {}}
+        scrollEventThrottle={16}
       >
-        {forest.length === 0 ? (
-          <Text style={styles.empty}>Nothing on the list. Add a task below.</Text>
-        ) : (
-          forest.map((node) => (
+        {forest.map((node, i) => (
+          <View key={node.task.id}>
+            <Dropzone
+              zoneId={`list-root-${i}`}
+              parentID=""
+              index={i}
+              depth={0}
+              composing={composer?.parentID === '' && composer.index === i}
+              onCompose={() => setComposer({ parentID: '', index: i })}
+              onSubmit={(name) => {
+                onCreate({ parentID: '', index: i }, name);
+                setComposer(null);
+              }}
+              onCancel={() => setComposer(null)}
+            />
             <TaskRow
-              key={node.task.id}
               node={node}
               depth={0}
+              composer={composer}
+              onCompose={setComposer}
+              onCreate={(slot, name) => {
+                onCreate(slot, name);
+                setComposer(null);
+              }}
               onToggleDone={onToggleDone}
               onToggleCollapsed={onToggleCollapsed}
               onOpen={onOpen}
               onMenu={onMenu}
-              onDragStart={onDragStart}
             />
-          ))
-        )}
+          </View>
+        ))}
+        <Dropzone
+          zoneId={`list-root-${forest.length}`}
+          parentID=""
+          index={forest.length}
+          depth={0}
+          composing={composer?.parentID === '' && composer.index === forest.length}
+          onCompose={() => setComposer({ parentID: '', index: forest.length })}
+          onSubmit={(name) => {
+            onCreate({ parentID: '', index: forest.length }, name);
+            setComposer(null);
+          }}
+          onCancel={() => setComposer(null)}
+        />
+        {forest.length === 0 && !composer ? (
+          <Pressable onPress={() => setComposer({ parentID: '', index: 0 })} style={styles.emptyHit}>
+            <Text style={styles.empty}>Tap the empty space to add a task</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -66,21 +101,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.listBg,
   },
-  heading: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
-    color: colors.muted,
-    fontSize: type.small,
-    fontWeight: '600',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
   content: {
-    paddingBottom: 72,
+    paddingBottom: 48,
+    flexGrow: 1,
+  },
+  emptyHit: {
+    padding: 16,
   },
   empty: {
-    padding: 16,
     color: colors.muted,
     fontSize: type.small,
   },

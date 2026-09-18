@@ -1,71 +1,75 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { Inbox } from '../components/Inbox';
-import { CAL_PX_PER_HOUR, CAL_START_HOUR, DayCalendar } from '../components/DayCalendar';
+import { DayCalendar } from '../components/DayCalendar';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { SplitPane } from '../components/SplitPane';
-import { formatMinutes, todayISO } from '../dates';
+import { DragDropProvider, type DragOrigin, type DropTarget, type Rect } from '../components/drag/DragDropContext';
+import { formatMinutes, parseMinutes, todayISO } from '../dates';
 import type { TaskRecord } from '../models/types';
 import type { TaskTreeStore } from '../services/taskStore';
-import { colors, type } from '../theme';
 
 type Props = {
   store: TaskTreeStore;
-  dragging: TaskRecord | null;
-  onDragStart: (task: TaskRecord) => void;
-  onDragEnd: () => void;
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
 };
 
-export type HomeScreenHandle = {
-  dropAt: (pageX: number, pageY: number, task: TaskRecord) => void;
-};
-
-export const HomeScreen = forwardRef<HomeScreenHandle, Props>(function HomeScreen(
-  { store, dragging, onDragStart, onDragEnd, onOpen, onMenu },
-  ref,
-) {
-  const [composer, setComposer] = useState('');
-  const [selectedISO, setSelectedISO] = useState(todayISO());
+export function HomeScreen({ store, onOpen, onMenu }: Props) {
   const [revealTopToken, setRevealTopToken] = useState(0);
-  const gridRef = useRef<View>(null);
-  const selectedRef = useRef(selectedISO);
-  selectedRef.current = selectedISO;
-  const dayTasks = useMemo(
-    () => store.tasksOnDay(selectedISO),
-    [store, selectedISO, store.inbox, store.allTasks()],
+  const today = todayISO();
+  const tasksByDay = useMemo(() => {
+    const map = new Map<string, TaskRecord[]>();
+    for (const task of store.allTasks()) {
+      if (!task.startDateISO || task.isTombstone) continue;
+      const list = map.get(task.startDateISO) ?? [];
+      list.push(task);
+      map.set(task.startDateISO, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
+    }
+    return map;
+  }, [store, store.inbox, store.allTasks()]);
+
+  const tasksForDay = useCallback(
+    (iso: string) => tasksByDay.get(iso) ?? [],
+    [tasksByDay],
   );
 
-  useImperativeHandle(ref, () => ({
-    dropAt(pageX, pageY, task) {
-      const node = gridRef.current as (View & { measureInWindow?: Function }) | null;
-      if (!node?.measureInWindow) return;
-      node.measureInWindow((x: number, y: number, w: number, h: number) => {
-        if (pageX < x || pageX > x + w || pageY < y || pageY > y + h) return;
-        const minutes = CAL_START_HOUR * 60 + ((pageY - y) / CAL_PX_PER_HOUR) * 60;
-        const snapped = Math.max(0, Math.round(minutes / 15) * 15);
-        void store.schedule(task.id, selectedRef.current, formatMinutes(snapped));
-        onDragEnd();
-      });
+  const onDrop = useCallback(
+    (
+      taskId: string,
+      origin: DragOrigin,
+      target: DropTarget,
+      pointer: { x: number; y: number },
+      zoneRect: Rect | null,
+    ) => {
+      if (target.kind === 'list') {
+        void store.placeOnList(taskId, {
+          parentID: target.parentID,
+          index: target.index,
+          unschedule: origin !== 'list',
+        });
+        return;
+      }
+      if (target.kind === 'nest') {
+        void store.placeOnList(taskId, {
+          parentID: target.parentID,
+          index: 0,
+          unschedule: origin !== 'list',
+        });
+        return;
+      }
+      const px = store.profile.pixelsPerHour || 50;
+      const minutes = zoneRect
+        ? Math.max(0, ((pointer.y - zoneRect.y) / px) * 60)
+        : parseMinutes('09:00');
+      const time = formatMinutes(Math.round(minutes / 15) * 15);
+      void store.placeOnCal(taskId, target.iso, time, origin === 'nested-cal');
     },
-  }));
-
-  async function addRoot() {
-    const name = composer.trim();
-    if (!name) return;
-    setComposer('');
-    await store.create({ name, onList: true, place: 'start' });
-    setRevealTopToken((value) => value + 1);
-  }
+    [store],
+  );
 
   return (
     <KeyboardAvoidingView
@@ -73,111 +77,61 @@ export const HomeScreen = forwardRef<HomeScreenHandle, Props>(function HomeScree
       behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
-      {dragging ? (
-        <Text style={styles.dragHint}>Drop on a calendar hour — or tap a time</Text>
-      ) : null}
-      <SplitPane
-        split={store.listHeightSplit}
-        onChange={(value) => {
-          void store.setListHeightSplit(value);
-        }}
-        top={
-          <ErrorBoundary label="Calendar">
-            <DayCalendar
-              selectedISO={selectedISO}
-              todayISO={todayISO()}
-              tasks={dayTasks}
-              onSelectDay={setSelectedISO}
-              onOpenTask={onOpen}
-              onCreateAt={(iso, time) => {
-                if (dragging) {
-                  void store.schedule(dragging.id, iso, time).then(onDragEnd);
-                  return;
-                }
-                void store
-                  .create({
-                    name: 'New event',
-                    onList: true,
+      <DragDropProvider onDrop={onDrop}>
+        <SplitPane
+          split={store.listHeightSplit}
+          onChange={(value) => {
+            void store.setListHeightSplit(value);
+          }}
+          top={
+            <ErrorBoundary label="Calendar">
+              <DayCalendar
+                todayISO={today}
+                tasksForDay={tasksForDay}
+                pixelsPerHour={store.profile.pixelsPerHour || 50}
+                onOpenTask={onOpen}
+                onCreateAt={(iso, time, name) => {
+                  void store.create({
+                    name,
+                    onList: false,
                     startDateISO: iso,
                     startTime: time,
-                    place: 'start',
-                  })
-                  .then(() => setRevealTopToken((value) => value + 1));
+                  });
+                }}
+              />
+            </ErrorBoundary>
+          }
+          bottom={
+            <Inbox
+              forest={store.inbox}
+              onToggleDone={(id) => void store.toggleDone(id)}
+              onToggleCollapsed={(id) => {
+                const task = store.task(id);
+                if (task) void store.setCollapsed(id, !task.isCollapsed);
               }}
-              gridRef={gridRef}
-              dropHint={!!dragging}
+              onOpen={onOpen}
+              onMenu={onMenu}
+              onCreate={(slot, name) => {
+                void store
+                  .create({
+                    name,
+                    parentID: slot.parentID || undefined,
+                    onList: true,
+                    index: slot.index,
+                  })
+                  .then(() => {
+                    if (!slot.parentID) setRevealTopToken((value) => value + 1);
+                  });
+              }}
+              revealTopToken={revealTopToken}
             />
-          </ErrorBoundary>
-        }
-        bottom={
-          <Inbox
-            forest={store.inbox}
-            onToggleDone={(id) => void store.toggleDone(id)}
-            onToggleCollapsed={(id) => {
-              const task = store.task(id);
-              if (task) void store.setCollapsed(id, !task.isCollapsed);
-            }}
-            onOpen={onOpen}
-            onMenu={onMenu}
-            onDragStart={onDragStart}
-            revealTopToken={revealTopToken}
-          />
-        }
-      />
-      <View style={styles.composer}>
-        <TextInput
-          value={composer}
-          onChangeText={setComposer}
-          placeholder="Add a task"
-          placeholderTextColor={colors.faint}
-          style={styles.input}
-          onSubmitEditing={() => void addRoot()}
-          returnKeyType="done"
+          }
         />
-        <Pressable style={styles.add} onPress={() => void addRoot()}>
-          <Text style={styles.addText}>Add</Text>
-        </Pressable>
-      </View>
+      </DragDropProvider>
     </KeyboardAvoidingView>
   );
-});
+}
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  dragHint: {
-    textAlign: 'center',
-    paddingVertical: 6,
-    backgroundColor: colors.accentSoft,
-    color: colors.accent,
-    fontWeight: '600',
-    fontSize: type.small,
-  },
-  composer: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-    backgroundColor: colors.navbar,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    zIndex: 2,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: colors.listBg,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.ink,
-    fontSize: type.body,
-  },
-  add: {
-    backgroundColor: colors.ink,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-  },
-  addText: {
-    color: colors.card,
-    fontWeight: '700',
-  },
 });

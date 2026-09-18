@@ -231,3 +231,42 @@ test('moveAmongSiblings swaps inbox order', async () => {
   const refused = await store.moveAmongSiblings(first.id, 1);
   assert.equal(refused, false);
 });
+
+test('create at dropzone index inserts between siblings', async () => {
+  const { store } = await boot('dropzone-create');
+  const parent = await store.create({ name: 'Holder', onList: true });
+  const first = await store.create({ name: 'First', parentID: parent.id, onList: true });
+  const third = await store.create({ name: 'Third', parentID: parent.id, onList: true });
+  const middle = await store.create({ name: 'Middle', parentID: parent.id, onList: true, index: 1 });
+  const names = store.inbox
+    .find((node) => node.task.id === parent.id)
+    ?.children.map((node) => node.task.name);
+  assert.deepEqual(names, ['First', 'Middle', 'Third']);
+  assert.ok(store.task(middle.id)!.orderValue > store.task(first.id)!.orderValue);
+  assert.ok(store.task(middle.id)!.orderValue < store.task(third.id)!.orderValue);
+});
+
+test('placeOnList nests, reorders, and unschedules from calendar', async () => {
+  const { store } = await boot('place-on-list');
+  const parent = await store.create({ name: 'Parent', onList: true });
+  const child = await store.create({ name: 'Child', onList: true });
+  await store.schedule(child.id, todayISO(), '10:00');
+  const nested = await store.placeOnList(child.id, { parentID: parent.id, index: 0, unschedule: true });
+  assert.equal(nested, true);
+  assert.equal(store.task(child.id)?.parentID, parent.id);
+  assert.equal(store.task(child.id)?.startTime, '');
+  assert.equal(store.task(child.id)?.startDateISO, '');
+  const sibling = await store.create({ name: 'Sibling', parentID: parent.id, onList: true });
+  await store.placeOnList(sibling.id, { parentID: parent.id, index: 0 });
+  const kids = store.inbox.find((node) => node.task.id === parent.id)?.children.map((node) => node.task.name);
+  assert.equal(kids?.[0], 'Sibling');
+});
+
+test('placeOnCal schedules onto a day', async () => {
+  const { store } = await boot('place-on-cal');
+  const task = await store.create({ name: 'Drag me', onList: true });
+  await store.placeOnCal(task.id, todayISO(), '14:15');
+  assert.equal(store.task(task.id)?.startDateISO, todayISO());
+  assert.equal(store.task(task.id)?.startTime, '14:15');
+  assert.equal(store.task(task.id)?.onList, true);
+});

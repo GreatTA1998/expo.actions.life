@@ -95,6 +95,7 @@ export function SignInScreen({ onSession }: Props) {
           style={[styles.button, styles.primary]}
           onPress={() => void run('Guest', continueAsGuest)}
           disabled={busy}
+          testID="continue-as-guest"
         >
           <Text style={styles.primaryText}>Continue as guest</Text>
         </Pressable>

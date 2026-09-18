@@ -83,6 +83,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
     >
       <KeyboardAvoidingView
         style={styles.sheet}
+        testID="task-detail"
         behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
       >
         <View style={styles.grab}>
