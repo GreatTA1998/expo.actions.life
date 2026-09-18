@@ -21,8 +21,9 @@ import {
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
 import { createComposerLock } from './composerLock';
-import { HOLD_DELAY, useDragDrop, type Rect } from './drag/DragDropContext';
+import { useDragDrop, type Rect } from './drag/DragDropContext';
 import { durationFromPointerDelta, measureNode, readWindowRect, snapDuration } from './drag/geometry';
+import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
 
 export const CAL_START_HOUR = 0;
 export const CAL_END_HOUR = 24;
@@ -752,8 +753,8 @@ function CalBlock({
   const height = Math.max(28, (duration / 60) * pixelsPerHour);
   const highlighted = bestId === nestId;
   const didResize = useRef(false);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdAt = useRef({ x: 0, y: 0 });
+  const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
+  const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
 
   useEffect(() => {
     return registerZone({
@@ -764,17 +765,7 @@ function CalBlock({
     });
   }, [nestId, registerZone, task.id]);
 
-  useEffect(() => {
-    return () => {
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-    };
-  }, []);
-
-  function clearHold() {
-    if (!holdTimer.current) return;
-    clearTimeout(holdTimer.current);
-    holdTimer.current = null;
-  }
+  useEffect(() => () => hold.dispose(), [hold]);
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
     const token = activate ? activateDrag() : undefined;
@@ -787,6 +778,7 @@ function CalBlock({
       `cal-block-${task.id}`,
     );
   }
+  startDrag.current = startPointerDrag;
 
   return (
     <View style={[styles.blockWrap, { top, height }]} pointerEvents="box-none">
@@ -804,8 +796,8 @@ function CalBlock({
           onOpenTask(task.id);
         }}
         onLongPress={(event) => {
-          clearHold();
-          startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY, true);
+          if (Platform.OS === 'web') return;
+          hold.longPress(event.nativeEvent.pageX, event.nativeEvent.pageY);
         }}
         delayLongPress={HOLD_DELAY}
         onPressIn={(event) => {
@@ -815,23 +807,17 @@ function CalBlock({
             startPointerDrag(pageX, pageY);
             return;
           }
-          clearHold();
-          holdAt.current = { x: pageX, y: pageY };
-          holdTimer.current = setTimeout(() => {
-            holdTimer.current = null;
-            startPointerDrag(pageX, pageY, true);
-          }, HOLD_DELAY);
+          hold.pressIn(pageX, pageY);
         }}
         onTouchMove={(event) => {
-          if (Platform.OS === 'web' || !holdTimer.current) return;
-          const { pageX, pageY } = event.nativeEvent;
-          if (Math.hypot(pageX - holdAt.current.x, pageY - holdAt.current.y) > 5) clearHold();
+          if (Platform.OS === 'web') return;
+          hold.touchMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
         }}
         onTouchEnd={() => {
-          if (Platform.OS !== 'web') clearHold();
+          if (Platform.OS !== 'web') hold.touchEnd();
         }}
         onTouchCancel={() => {
-          if (Platform.OS !== 'web') clearHold();
+          if (Platform.OS !== 'web') hold.touchEnd();
         }}
         style={[styles.block, highlighted && styles.blockHot]}
       >

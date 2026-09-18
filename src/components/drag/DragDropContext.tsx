@@ -78,7 +78,6 @@ type DragContextValue = {
 };
 
 const DragContext = createContext<DragContextValue | null>(null);
-const HOLD_MS = 150;
 const MOUSE_SLOP = 2;
 const TOUCH_SLOP = 5;
 const PROBE_H = 2;
@@ -458,7 +457,7 @@ export function DropPreview({ id, children, style }: { id: string; children?: Re
   return <View style={[style, on ? styles.preview : null]}>{children}</View>;
 }
 
-export const HOLD_DELAY = HOLD_MS;
+export { HOLD_DELAY } from './nativeHold';
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },

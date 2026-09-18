@@ -3,8 +3,9 @@ import { useEffect, useRef } from 'react';
 import { isPastDate, relativeDateChip } from '../dates';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
-import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
+import { useDragDrop } from './drag/DragDropContext';
 import { measureNode } from './drag/geometry';
+import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
 import { Dropzone } from './Dropzone';
 
 export type ComposerSlot = { parentID: string; index: number } | null;
@@ -35,8 +36,8 @@ export function TaskRow({
   const { task, children } = node;
   const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
   const rowRef = useRef<View>(null);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdAt = useRef({ x: 0, y: 0 });
+  const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
+  const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
   const hasChildren = children.length > 0;
   const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
   const datePast = isPastDate(task.startDateISO);
@@ -52,17 +53,7 @@ export function TaskRow({
     });
   }, [nestId, registerZone, task.id]);
 
-  useEffect(() => {
-    return () => {
-      if (holdTimer.current) clearTimeout(holdTimer.current);
-    };
-  }, []);
-
-  function clearHold() {
-    if (!holdTimer.current) return;
-    clearTimeout(holdTimer.current);
-    holdTimer.current = null;
-  }
+  useEffect(() => () => hold.dispose(), [hold]);
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
     const token = activate ? activateDrag() : undefined;
@@ -75,6 +66,7 @@ export function TaskRow({
       `task-row-${task.id}`,
     );
   }
+  startDrag.current = startPointerDrag;
 
   return (
     <View>
@@ -116,8 +108,8 @@ export function TaskRow({
         <Pressable
           onPress={() => onOpen(task.id)}
           onLongPress={(event) => {
-            clearHold();
-            startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY, true);
+            if (Platform.OS === 'web') return;
+            hold.longPress(event.nativeEvent.pageX, event.nativeEvent.pageY);
           }}
           delayLongPress={HOLD_DELAY}
           onPressIn={(event) => {
@@ -127,23 +119,17 @@ export function TaskRow({
               startPointerDrag(pageX, pageY);
               return;
             }
-            clearHold();
-            holdAt.current = { x: pageX, y: pageY };
-            holdTimer.current = setTimeout(() => {
-              holdTimer.current = null;
-              startPointerDrag(pageX, pageY, true);
-            }, HOLD_DELAY);
+            hold.pressIn(pageX, pageY);
           }}
           onTouchMove={(event) => {
-            if (Platform.OS === 'web' || !holdTimer.current) return;
-            const { pageX, pageY } = event.nativeEvent;
-            if (Math.hypot(pageX - holdAt.current.x, pageY - holdAt.current.y) > 5) clearHold();
+            if (Platform.OS === 'web') return;
+            hold.touchMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
           }}
           onTouchEnd={() => {
-            if (Platform.OS !== 'web') clearHold();
+            if (Platform.OS !== 'web') hold.touchEnd();
           }}
           onTouchCancel={() => {
-            if (Platform.OS !== 'web') clearHold();
+            if (Platform.OS !== 'web') hold.touchEnd();
           }}
           {...(Platform.OS === 'web'
             ? ({
