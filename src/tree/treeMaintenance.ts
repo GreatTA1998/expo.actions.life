@@ -26,6 +26,19 @@ export function inboxForest(docs: TaskRecord[]): TaskTree[] {
   return buildForest(docs.filter((doc) => doc.onList));
 }
 
+/** Full subtree under a parent, including calendar-only children (web TaskElement compact list). */
+export function childrenForest(parentID: string, docs: TaskRecord[]): TaskTree[] {
+  const live = docs.filter((doc) => !doc.isTombstone);
+  const grouped = nodesByParent(live);
+  function hydrate(node: TaskRecord): TaskTree {
+    return {
+      task: node,
+      children: (grouped[node.id] ?? []).map(hydrate),
+    };
+  }
+  return (grouped[parentID] ?? []).map(hydrate);
+}
+
 export function subtreeIDs(of: string, docs: TaskRecord[]): string[] {
   const children = new Map<string, TaskRecord[]>();
   for (const doc of docs) {

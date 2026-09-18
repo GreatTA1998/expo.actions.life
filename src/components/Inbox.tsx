@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { Dropzone } from './Dropzone';
+import { useDragDrop, type Rect } from './drag/DragDropContext';
 import { TaskRow, type ComposerSlot } from './TaskRow';
 
 type Props = {
@@ -25,21 +26,48 @@ export function Inbox({
   revealTopToken,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const wrapRef = useRef<View>(null);
+  const offset = useRef({ x: 0, y: 0 });
+  const viewport = useRef<Rect | null>(null);
   const [composer, setComposer] = useState<ComposerSlot>(null);
+  const { registerScroller, refreshZones } = useDragDrop();
 
   useEffect(() => {
     if (!revealTopToken) return;
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [revealTopToken]);
 
+  useEffect(() => {
+    return registerScroller({
+      id: 'inbox',
+      axis: 'y',
+      getViewport: () => viewport.current,
+      getOffset: () => offset.current,
+      scrollTo: (next) => {
+        offset.current = next;
+        scrollRef.current?.scrollTo({ y: next.y, animated: false });
+      },
+    });
+  }, [registerScroller]);
+
+  function measureViewport() {
+    const node = wrapRef.current as (View & { measureInWindow?: Function }) | null;
+    node?.measureInWindow?.((x: number, y: number, width: number, height: number) => {
+      viewport.current = { x, y, width, height };
+    });
+  }
+
   return (
-    <View style={styles.wrap} testID="inbox">
+    <View ref={wrapRef} style={styles.wrap} testID="inbox" onLayout={measureViewport}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        onScroll={() => {}}
+        onScroll={(event) => {
+          offset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
+          refreshZones();
+        }}
         scrollEventThrottle={16}
       >
         {forest.map((node, i) => (

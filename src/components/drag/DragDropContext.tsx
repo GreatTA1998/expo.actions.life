@@ -9,9 +9,10 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
+import { clipRectToWindow, edgeScrollDelta } from './geometry';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
@@ -45,10 +46,19 @@ type Zone = {
   rect: Rect | null;
 };
 
+export type Scroller = {
+  id: string;
+  axis: 'x' | 'y';
+  getViewport: () => Rect | null;
+  getOffset: () => { x: number; y: number };
+  scrollTo: (next: { x: number; y: number }) => void;
+};
+
 type DragContextValue = {
   drag: DragSession | null;
   bestId: string;
   registerZone: (zone: Omit<Zone, 'rect'>) => () => void;
+  registerScroller: (scroller: Scroller) => () => void;
   armDrag: (
     task: TaskRecord,
     origin: DragOrigin,
@@ -68,6 +78,8 @@ const HOLD_MS = 150;
 const MOUSE_SLOP = 2;
 const TOUCH_SLOP = 5;
 const PROBE_H = 8;
+const EDGE = 44;
+const SCROLL_PX = 16;
 
 function emptySession(): DragSession | null {
   return null;
@@ -100,6 +112,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
   const zones = useRef(new Map<string, Zone>());
+  const scrollers = useRef(new Map<string, Scroller>());
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
   dragRef.current = drag;
@@ -115,6 +128,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, []);
 
   const pickZone = useCallback((session: DragSession) => {
+    const win = Dimensions.get('window');
     const probe = {
       left: session.pointerX - 4,
       top: session.pointerY - PROBE_H / 2,
@@ -125,8 +139,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     let max = 0;
     for (const [id, zone] of zones.current) {
       if (zone.ownerTaskId && zone.ownerTaskId === session.id) continue;
-      const rect = zone.rect;
-      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      const raw = zone.rect;
+      if (!raw || raw.width <= 0 || raw.height <= 0) continue;
+      const rect = clipRectToWindow(raw, win);
+      if (!rect) continue;
       const left = Math.max(probe.left, rect.x);
       const top = Math.max(probe.top, rect.y);
       const right = Math.min(probe.right, rect.x + rect.width);
@@ -241,6 +257,13 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     };
   }, []);
 
+  const registerScroller = useCallback((scroller: Scroller) => {
+    scrollers.current.set(scroller.id, scroller);
+    return () => {
+      scrollers.current.delete(scroller.id);
+    };
+  }, []);
+
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const move = (event: PointerEvent) => {
@@ -262,11 +285,49 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     };
   }, [cancelDrag, endDrag, moveDrag]);
 
+  useEffect(() => {
+    if (!drag?.active) return;
+    let raf = 0;
+    const tick = () => {
+      const session = dragRef.current;
+      if (!session?.active) return;
+      let moved = false;
+      for (const scroller of scrollers.current.values()) {
+        const viewport = scroller.getViewport();
+        if (!viewport) continue;
+        const offset = scroller.getOffset();
+        const delta = edgeScrollDelta(
+          { x: session.pointerX, y: session.pointerY },
+          viewport,
+          scroller.axis,
+          EDGE,
+          SCROLL_PX,
+        );
+        if (delta === 0) continue;
+        const next = {
+          x: Math.max(0, offset.x + (scroller.axis === 'x' ? delta : 0)),
+          y: Math.max(0, offset.y + (scroller.axis === 'y' ? delta : 0)),
+        };
+        if (next.x === offset.x && next.y === offset.y) continue;
+        scroller.scrollTo(next);
+        moved = true;
+      }
+      if (moved) {
+        refreshZones();
+        pickZone(session);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drag?.active, pickZone, refreshZones]);
+
   const value = useMemo<DragContextValue>(
     () => ({
       drag,
       bestId,
       registerZone,
+      registerScroller,
       armDrag,
       activateDrag,
       moveDrag,
@@ -274,7 +335,18 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       cancelDrag,
       refreshZones,
     }),
-    [activateDrag, armDrag, bestId, cancelDrag, drag, endDrag, moveDrag, refreshZones, registerZone],
+    [
+      activateDrag,
+      armDrag,
+      bestId,
+      cancelDrag,
+      drag,
+      endDrag,
+      moveDrag,
+      refreshZones,
+      registerScroller,
+      registerZone,
+    ],
   );
 
   return (

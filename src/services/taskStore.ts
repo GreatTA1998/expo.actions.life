@@ -8,6 +8,7 @@ import {
   adjacentSibling,
   applyReparent,
   computeOrderValue,
+  childrenForest,
   inboxForest,
   listSiblings,
   nextOrderValue,
@@ -137,6 +138,10 @@ export class TaskTreeStore {
 
   allTasks(): TaskRecord[] {
     return this.records;
+  }
+
+  childrenOf(parentID: string): TaskTree[] {
+    return childrenForest(parentID, this.records);
   }
 
   task(id: string): TaskRecord | undefined {

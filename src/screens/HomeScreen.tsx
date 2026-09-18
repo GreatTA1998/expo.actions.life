@@ -88,6 +88,7 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
               <DayCalendar
                 todayISO={today}
                 tasksForDay={tasksForDay}
+                childrenOf={(id) => store.childrenOf(id)}
                 pixelsPerHour={store.profile.pixelsPerHour || 50}
                 onOpenTask={onOpen}
                 onCreateAt={(iso, time, name) => {
@@ -97,6 +98,9 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
                     startDateISO: iso,
                     startTime: time,
                   });
+                }}
+                onSetDuration={(id, minutes) => {
+                  void store.setDuration(id, minutes);
                 }}
               />
             </ErrorBoundary>

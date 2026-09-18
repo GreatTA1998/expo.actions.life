@@ -270,3 +270,14 @@ test('placeOnCal schedules onto a day', async () => {
   assert.equal(store.task(task.id)?.startTime, '14:15');
   assert.equal(store.task(task.id)?.onList, true);
 });
+
+test('nest onto a calendar block then resize duration', async () => {
+  const { store } = await boot('cal-block-kids');
+  const block = store.task('photo-bird');
+  assert.ok(block);
+  const child = await store.create({ name: 'Bring binoculars', onList: true });
+  await store.placeOnList(child.id, { parentID: block.id, index: 0 });
+  assert.equal(store.childrenOf(block.id)[0]?.task.name, 'Bring binoculars');
+  await store.setDuration(block.id, 45);
+  assert.equal(store.task(block.id)?.duration, 45);
+});
