@@ -4,6 +4,7 @@ export const COMPOSER_UNLOCK_MS = COMPOSER_BLUR_MS + 30;
 /** Guards Enter vs deferred blur so keep-open composers can submit again without duplicates. */
 export function createComposerLock() {
   let committed = false;
+  let disposed = false;
   let unlockTimer: ReturnType<typeof setTimeout> | null = null;
   let blurTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -25,7 +26,7 @@ export function createComposerLock() {
     },
     /** True when this submit should run. Stays locked through the blur window, then unlocks for the next Enter. */
     commit(): boolean {
-      if (committed) return false;
+      if (disposed || committed) return false;
       committed = true;
       clearBlur();
       clearUnlock();
@@ -36,18 +37,22 @@ export function createComposerLock() {
       return true;
     },
     scheduleBlur(run: () => void) {
+      if (disposed) return;
       clearBlur();
       blurTimer = setTimeout(() => {
         blurTimer = null;
+        if (disposed) return;
         run();
       }, COMPOSER_BLUR_MS);
     },
     /** Fresh tap/open. Do not call while keep-open composing stays true. */
     beginCompose() {
+      if (disposed) return;
       committed = false;
       clearBlur();
     },
     dispose() {
+      disposed = true;
       clearBlur();
       clearUnlock();
     },

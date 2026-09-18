@@ -99,10 +99,11 @@ test('calendar Enter nudges the next create by duration + 30 minutes', () => {
   assert.equal(calendarNudgeCreateTime(''), '');
 });
 
-test('split clamp keeps 48px on each pane around a 48px grip', () => {
+test('split clamp keeps 48px on each pane of the space after the grip', () => {
+  const remaining = 800 - 48;
   assert.equal(clampSplitFraction(0.5, 800), 0.5);
-  assert.equal(clampSplitFraction(0, 800), 48 / 800);
-  assert.equal(clampSplitFraction(1, 800), (800 - 48 - 48) / 800);
-  assert.equal(clampSplitFraction(0.01, 800), 48 / 800);
-  assert.ok(clampSplitFraction(0.1, 800) > 48 / 800);
+  assert.equal(clampSplitFraction(0, 800), 48 / remaining);
+  assert.equal(clampSplitFraction(1, 800), 1 - 48 / remaining);
+  assert.equal(clampSplitFraction(0.01, 800), 48 / remaining);
+  assert.ok(clampSplitFraction(0.1, 800) > 48 / remaining);
 });

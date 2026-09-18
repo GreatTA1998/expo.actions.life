@@ -107,6 +107,18 @@ test('empty blur after composer moved does not cancel the next slot', async () =
   lock.dispose();
 });
 
+test('unmount dispose ignores a later blur commit', async () => {
+  const lock = createComposerLock();
+  let ran = false;
+  lock.dispose();
+  lock.scheduleBlur(() => {
+    ran = true;
+  });
+  assert.equal(lock.commit(), false);
+  await flush(COMPOSER_BLUR_MS + 10);
+  assert.equal(ran, false);
+});
+
 test('blur uses the name captured before draft is cleared', async () => {
   const lock = createComposerLock();
   const created: string[] = [];

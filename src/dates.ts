@@ -74,6 +74,10 @@ export function calendarStripISO(today: string, index: number): string {
   return addDaysISO(calendarOriginISO(today), index);
 }
 
+export function calendarStripIndex(today: string, iso: string): number {
+  return daysBetween(calendarOriginISO(today), iso);
+}
+
 export function calendarMountedWindow(
   viewportLeft: number,
   viewportRight: number,
@@ -104,17 +108,21 @@ export function calendarNudgeCreateTime(time: string, duration = 30, gap = CAL_C
   return formatMinutes(parseMinutes(time) + duration + gap);
 }
 
-/** List is the bottom pane. Min 48px each side, 48px grip, persist a 0–1 fraction. */
+/**
+ * `split` is the inbox flex share of the space *after* the grip.
+ * Min 48px each pane in that remaining height.
+ */
 export function clampSplitFraction(
   split: number,
   appHeight: number,
   minPx = SPLIT_MIN_PX,
   handlePx = SPLIT_HANDLE_PX,
 ): number {
-  if (!(appHeight > 0)) return Math.min(1, Math.max(0, split));
-  if (appHeight <= handlePx + minPx * 2) return 0.5;
-  const min = minPx / appHeight;
-  const max = (appHeight - handlePx - minPx) / appHeight;
+  const remaining = appHeight - handlePx;
+  if (!(remaining > 0)) return Math.min(1, Math.max(0, split));
+  if (remaining <= minPx * 2) return 0.5;
+  const min = minPx / remaining;
+  const max = 1 - minPx / remaining;
   return Math.min(max, Math.max(min, split));
 }
 

@@ -6,6 +6,7 @@ import {
   calendarMountedWindow,
   calendarNudgeCreateTime,
   calendarShouldRecenter,
+  calendarStripIndex,
   calendarStripISO,
   CAL_ORIGIN_OFFSET,
   CAL_TOTAL_COLUMNS,
@@ -85,6 +86,8 @@ export function DayCalendar({
   const focusY = calendarJumpToNowY(nowHM(), pixelsPerHour);
   const centered = useRef(false);
   const hoursPinned = useRef(false);
+  const pairingScroll = useRef(false);
+  const drivingScroll = useRef<'header' | 'days' | null>(null);
   const { refreshZones, registerScroller, drag, pointerLocked } = useDragDrop();
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
@@ -107,8 +110,12 @@ export function DayCalendar({
       getOffset: () => dayOffset.current,
       scrollTo: (next) => {
         dayOffset.current = next;
+        pairingScroll.current = true;
         dayScrollRef.current?.scrollTo({ x: next.x, animated: false });
         headerScrollRef.current?.scrollTo({ x: next.x, animated: false });
+        requestAnimationFrame(() => {
+          pairingScroll.current = false;
+        });
       },
     });
     return () => {
@@ -132,11 +139,35 @@ export function DayCalendar({
     if (columnWidth < 40) return;
     if (centered.current) return;
     const x = todayIndex * columnWidth;
-    dayScrollRef.current?.scrollTo({ x, animated: false });
-    headerScrollRef.current?.scrollTo({ x, animated: false });
-    dayOffset.current = { x, y: 0 };
+    pairLinkedScroll('days', x);
     centered.current = true;
   }, [columnWidth, focusY, todayIndex]);
+
+  function beginLinkedScroll(from: 'header' | 'days') {
+    drivingScroll.current = from;
+  }
+
+  function endLinkedScroll(from: 'header' | 'days') {
+    if (drivingScroll.current === from) drivingScroll.current = null;
+  }
+
+  function pairLinkedScroll(from: 'header' | 'days', x: number) {
+    dayOffset.current = { x, y: 0 };
+    if (pairingScroll.current) {
+      syncDayScroll(x);
+      refreshZones();
+      return;
+    }
+    if (drivingScroll.current && drivingScroll.current !== from) return;
+    pairingScroll.current = true;
+    if (from === 'header') dayScrollRef.current?.scrollTo({ x, animated: false });
+    else headerScrollRef.current?.scrollTo({ x, animated: false });
+    requestAnimationFrame(() => {
+      pairingScroll.current = false;
+    });
+    syncDayScroll(x);
+    refreshZones();
+  }
 
   function syncDayScroll(x: number) {
     const width = Math.max(columnWidth, 1);
@@ -146,9 +177,17 @@ export function DayCalendar({
     const iso = calendarStripISO(todayISO, left);
     if (iso !== centerISO) setCenterISO(iso);
     if (calendarShouldRecenter(left, right, windowStart, windowEnd)) {
-      const next = calendarMountedWindow(left, right);
-      setWindowStart(next.start);
-      setWindowEnd(next.end);
+      let next = calendarMountedWindow(left, right);
+      if (composer) {
+        const idx = calendarStripIndex(todayISO, composer.iso);
+        if (idx >= 0 && idx < CAL_TOTAL_COLUMNS) {
+          next = { start: Math.min(next.start, idx), end: Math.max(next.end, idx) };
+        }
+      }
+      if (next.start !== windowStart || next.end !== windowEnd) {
+        setWindowStart(next.start);
+        setWindowEnd(next.end);
+      }
     }
   }
 
@@ -194,12 +233,14 @@ export function DayCalendar({
           scrollEnabled={!drag && !pointerLocked}
           showsHorizontalScrollIndicator={false}
           style={styles.headerScroll}
+          onScrollBeginDrag={() => beginLinkedScroll('header')}
+          onScrollEndDrag={(event) => {
+            const vx = event.nativeEvent.velocity?.x ?? 0;
+            if (Math.abs(vx) < 0.02) endLinkedScroll('header');
+          }}
+          onMomentumScrollEnd={() => endLinkedScroll('header')}
           onScroll={(event) => {
-            const x = event.nativeEvent.contentOffset.x;
-            dayOffset.current = { x, y: 0 };
-            dayScrollRef.current?.scrollTo({ x, animated: false });
-            syncDayScroll(x);
-            refreshZones();
+            pairLinkedScroll('header', event.nativeEvent.contentOffset.x);
           }}
           scrollEventThrottle={16}
         >
@@ -219,6 +260,7 @@ export function DayCalendar({
                 draft={draft}
                 onDraft={setDraft}
                 onCompose={() => {
+                  if (composer?.iso === iso && composer.time === '') return;
                   setDraft('');
                   setComposer({ iso, time: '' });
                 }}
@@ -268,12 +310,14 @@ export function DayCalendar({
             nestedScrollEnabled
             scrollEnabled={!drag && !pointerLocked}
             showsHorizontalScrollIndicator={false}
+            onScrollBeginDrag={() => beginLinkedScroll('days')}
+            onScrollEndDrag={(event) => {
+              const vx = event.nativeEvent.velocity?.x ?? 0;
+              if (Math.abs(vx) < 0.02) endLinkedScroll('days');
+            }}
+            onMomentumScrollEnd={() => endLinkedScroll('days')}
             onScroll={(event) => {
-              const x = event.nativeEvent.contentOffset.x;
-              dayOffset.current = { x, y: 0 };
-              headerScrollRef.current?.scrollTo({ x, animated: false });
-              syncDayScroll(x);
-              refreshZones();
+              pairLinkedScroll('days', event.nativeEvent.contentOffset.x);
             }}
             scrollEventThrottle={16}
             testID="calendar-days"
@@ -345,8 +389,17 @@ function DayHead({
   const composingRef = useRef(composing);
   composingRef.current = composing;
   const wasComposing = useRef(composing);
+  const alive = useRef(true);
   const zoneId = `cal-head-${iso}`;
   const highlighted = bestId === zoneId;
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      lock.dispose();
+    };
+  }, [lock]);
 
   useEffect(() => {
     return registerZone({
@@ -362,6 +415,7 @@ function DayHead({
   }, [composing, lock]);
 
   function commit(keepOpen: boolean) {
+    if (!alive.current) return;
     if (!lock.commit()) return;
     const name = draftRef.current.trim();
     if (name) onCreate(name, keepOpen);
@@ -375,7 +429,10 @@ function DayHead({
       nativeID={zoneId}
       testID={`day-head-${iso}`}
       onLayout={() => refreshZones()}
-      onPress={onCompose}
+      onPress={() => {
+        if (composing) return;
+        onCompose();
+      }}
       style={[styles.dayHead, { width }, highlighted && styles.columnHot]}
     >
       <Text style={[styles.dow, isToday && styles.dowToday]}>
@@ -420,7 +477,12 @@ function DayHead({
             style={styles.headInput}
             testID={`cal-head-input-${iso}`}
             onSubmitEditing={() => commit(true)}
-            onBlur={() => lock.scheduleBlur(() => commit(false))}
+            onBlur={() =>
+              lock.scheduleBlur(() => {
+                if (!alive.current) return;
+                commit(false);
+              })
+            }
           />
         </Pressable>
       ) : null}
@@ -472,10 +534,19 @@ function DayColumn({
   const composingRef = useRef(!!composer);
   composingRef.current = !!composer;
   const wasComposing = useRef(!!composer);
+  const alive = useRef(true);
   const zoneId = `cal-${iso}`;
   const highlighted = bestId === zoneId;
   const liveColY = readWindowRect(ref.current, zoneId)?.y ?? colY.current;
   const interval = Math.max(1, snapInterval);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      lock.dispose();
+    };
+  }, [lock]);
 
   useEffect(() => {
     return registerZone({
@@ -507,6 +578,7 @@ function DayColumn({
   }
 
   function commit(keepOpen: boolean) {
+    if (!alive.current) return;
     if (!lock.commit()) return;
     const name = draftRef.current.trim();
     if (name && composer) onCreate(composer.time, name, keepOpen);
@@ -531,8 +603,9 @@ function DayColumn({
       }}
       onPress={(event) => {
         measureNode(ref.current, (rect) => {
-          onDraft('');
-          onCompose({ iso, time: timeAt(event.nativeEvent.pageY, rect.y) });
+          const time = timeAt(event.nativeEvent.pageY, rect.y);
+          if (!composer) onDraft('');
+          onCompose({ iso, time });
         });
       }}
       style={[styles.column, { width, height }]}
@@ -592,7 +665,12 @@ function DayColumn({
             style={styles.calInput}
             testID={`cal-input-${iso}`}
             onSubmitEditing={() => commit(true)}
-            onBlur={() => lock.scheduleBlur(() => commit(false))}
+            onBlur={() =>
+              lock.scheduleBlur(() => {
+                if (!alive.current) return;
+                commit(false);
+              })
+            }
           />
         </View>
       ) : null}

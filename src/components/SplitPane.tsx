@@ -25,7 +25,8 @@ export function SplitPane({ split, onChange, top, bottom }: Props) {
       },
       onPanResponderMove: (_, gesture) => {
         if (!height.current) return;
-        const next = start.current - gesture.dy / height.current;
+        const remaining = Math.max(1, height.current - SPLIT_HANDLE_PX);
+        const next = start.current - gesture.dy / remaining;
         onChange(clampSplitFraction(next, height.current));
       },
     }),
