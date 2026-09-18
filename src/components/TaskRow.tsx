@@ -4,6 +4,7 @@ import { isPastDate, relativeDateChip } from '../dates';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { useDragDrop } from './drag/DragDropContext';
+import { useZoneHighlight } from './drag/useZoneHighlight';
 import { measureNode } from './drag/geometry';
 import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
 import { Dropzone } from './Dropzone';
@@ -34,7 +35,7 @@ export function TaskRow({
   onMenu,
 }: Props) {
   const { task, children } = node;
-  const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
+  const { registerZone, armDrag, activateDrag, refreshZones } = useDragDrop();
   const rowRef = useRef<View>(null);
   const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
   const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
@@ -42,7 +43,7 @@ export function TaskRow({
   const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
   const datePast = isPastDate(task.startDateISO);
   const nestId = `nest-${task.id}`;
-  const highlighted = bestId === nestId;
+  const highlighted = useZoneHighlight(nestId);
 
   useEffect(() => {
     return registerZone({

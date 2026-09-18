@@ -1,4 +1,4 @@
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { colors, type } from '../theme';
 import {
@@ -20,10 +20,14 @@ import {
 } from '../dates';
 import type { TaskRecord, TaskTree } from '../models/types';
 import { HABIT_TEMPLATES } from '../services/seed';
+import { TwoAxisScroll, type ScrollOffset, type TwoAxisScrollHandle } from './calendar/TwoAxisScroll';
 import { createComposerLock } from './composerLock';
 import { useDragDrop, type Rect } from './drag/DragDropContext';
+import { useZoneHighlight } from './drag/useZoneHighlight';
 import { durationFromPointerDelta, measureNode, snapDuration } from './drag/geometry';
 import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
+
+type NativeView = View & { setNativeProps?: (props: object) => void };
 
 export const CAL_START_HOUR = 0;
 export const CAL_END_HOUR = 24;
@@ -75,57 +79,55 @@ export function DayCalendar({
     return list;
   }, [todayISO, windowStart, windowEnd]);
   const gridHeight = (CAL_END_HOUR - CAL_START_HOUR) * pixelsPerHour;
-  const hourScrollRef = useRef<ScrollView>(null);
-  const dayScrollRef = useRef<ScrollView>(null);
-  const headerScrollRef = useRef<ScrollView>(null);
-  const hourWrapRef = useRef<View>(null);
+  const scrollRef = useRef<TwoAxisScrollHandle>(null);
+  const headerMotion = useRef<View>(null);
+  const axisMotion = useRef<View>(null);
   const dayWrapRef = useRef<View>(null);
-  const hourOffset = useRef({ x: 0, y: 0 });
-  const dayOffset = useRef({ x: 0, y: 0 });
-  const hourViewport = useRef<Rect | null>(null);
+  const offsetRef = useRef<ScrollOffset>({ x: 0, y: 0 });
   const dayViewport = useRef<Rect | null>(null);
   const focusY = calendarJumpToNowY(nowHM(), pixelsPerHour);
   const centered = useRef(false);
-  const hoursPinned = useRef(false);
-  const pairingScroll = useRef(false);
-  const drivingScroll = useRef<'header' | 'days' | null>(null);
   const { refreshZones, registerScroller, drag, pointerLocked, scrollLocked } = useDragDrop();
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
   const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
 
+  function applyStickyTransforms(next: ScrollOffset) {
+    (headerMotion.current as NativeView | null)?.setNativeProps?.({
+      style: { transform: [{ translateX: -next.x }] },
+    });
+    (axisMotion.current as NativeView | null)?.setNativeProps?.({
+      style: { transform: [{ translateY: -next.y }] },
+    });
+  }
+
+  function handleOffset(next: ScrollOffset) {
+    offsetRef.current = next;
+    applyStickyTransforms(next);
+    syncDayScroll(next.x);
+    refreshZones();
+  }
+
   useEffect(() => {
+    const shared = {
+      getViewport: () => dayViewport.current,
+      getOffset: () => offsetRef.current,
+      scrollTo: (next: ScrollOffset) => {
+        scrollRef.current?.scrollTo(next);
+      },
+      setEnabled: (enabled: boolean) => {
+        scrollRef.current?.setEnabled(enabled);
+      },
+    };
     const unHour = registerScroller({
       id: 'cal-hours',
       axis: 'y',
-      getViewport: () => hourViewport.current,
-      getOffset: () => hourOffset.current,
-        scrollTo: (next) => {
-          hourOffset.current = next;
-          hourScrollRef.current?.scrollTo({ y: next.y, animated: false });
-        },
-        setEnabled: (enabled) => {
-          hourScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
-        },
+      ...shared,
     });
     const unDays = registerScroller({
       id: 'cal-days',
       axis: 'x',
-      getViewport: () => dayViewport.current,
-      getOffset: () => dayOffset.current,
-        scrollTo: (next) => {
-          dayOffset.current = next;
-          pairingScroll.current = true;
-          dayScrollRef.current?.scrollTo({ x: next.x, animated: false });
-          headerScrollRef.current?.scrollTo({ x: next.x, animated: false });
-          requestAnimationFrame(() => {
-            pairingScroll.current = false;
-          });
-        },
-        setEnabled: (enabled) => {
-          dayScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
-          headerScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
-        },
+      ...shared,
     });
     return () => {
       unHour();
@@ -140,49 +142,14 @@ export function DayCalendar({
   }
 
   useLayoutEffect(() => {
-    if (!hoursPinned.current) {
-      hourOffset.current = { x: 0, y: focusY };
-      hourScrollRef.current?.scrollTo({ y: focusY, animated: false });
-      hoursPinned.current = true;
-    }
     if (columnWidth < 40) return;
     if (centered.current) return;
-    const x = todayIndex * columnWidth;
-    dayOffset.current = { x, y: 0 };
-    pairingScroll.current = true;
-    dayScrollRef.current?.scrollTo({ x, animated: false });
-    headerScrollRef.current?.scrollTo({ x, animated: false });
-    requestAnimationFrame(() => {
-      pairingScroll.current = false;
-    });
+    const next = { x: todayIndex * columnWidth, y: focusY };
+    scrollRef.current?.scrollTo(next);
+    offsetRef.current = next;
+    applyStickyTransforms(next);
     centered.current = true;
   }, [columnWidth, focusY, todayIndex]);
-
-  function beginLinkedScroll(from: 'header' | 'days') {
-    drivingScroll.current = from;
-  }
-
-  function endLinkedScroll(from: 'header' | 'days') {
-    if (drivingScroll.current === from) drivingScroll.current = null;
-  }
-
-  function pairLinkedScroll(from: 'header' | 'days', x: number) {
-    dayOffset.current = { x, y: 0 };
-    if (pairingScroll.current) {
-      syncDayScroll(x);
-      refreshZones();
-      return;
-    }
-    if (drivingScroll.current && drivingScroll.current !== from) return;
-    pairingScroll.current = true;
-    if (from === 'header') dayScrollRef.current?.scrollTo({ x, animated: false });
-    else headerScrollRef.current?.scrollTo({ x, animated: false });
-    requestAnimationFrame(() => {
-      pairingScroll.current = false;
-    });
-    syncDayScroll(x);
-    refreshZones();
-  }
 
   function syncDayScroll(x: number) {
     const width = Math.max(columnWidth, 1);
@@ -242,70 +209,51 @@ export function DayCalendar({
         <Text style={[styles.month, { width: TIME_AXIS }]} testID="calendar-month">
           {Number(centerISO.slice(5, 7))}
         </Text>
-        <ScrollView
-          ref={headerScrollRef}
-          horizontal
-          scrollEnabled={scrollEnabled}
-          canCancelContentTouches={!pointerLocked && !scrollLocked}
-          showsHorizontalScrollIndicator={false}
-          style={styles.headerScroll}
-          onScrollBeginDrag={() => beginLinkedScroll('header')}
-          onScrollEndDrag={(event) => {
-            const vx = event.nativeEvent.velocity?.x ?? 0;
-            if (Math.abs(vx) < 0.02) endLinkedScroll('header');
-          }}
-          onMomentumScrollEnd={() => endLinkedScroll('header')}
-          onScroll={(event) => {
-            pairLinkedScroll('header', event.nativeEvent.contentOffset.x);
-          }}
-          scrollEventThrottle={16}
-        >
-          <View style={{ width: leftSpacer }} />
-          {days.map((iso) => {
-            const { chips, icons } = headerIcons(iso);
-            return (
-              <DayHead
-                key={`h-${iso}`}
-                iso={iso}
-                width={columnWidth}
-                isToday={iso === todayISO}
-                chips={chips}
-                icons={icons}
-                onOpenTask={onOpenTask}
-                composing={composer?.iso === iso && composer.time === ''}
-                draft={draft}
-                onDraft={setDraft}
-                onCompose={() => {
-                  if (composer?.iso === iso && composer.time === '') return;
-                  setDraft('');
-                  setComposer({ iso, time: '' });
-                }}
-                onCreate={(name, keepOpen) => onCreateKeepOpen(iso, '', name, keepOpen)}
-                onCancel={() => setComposer(null)}
-              />
-            );
-          })}
-          <View style={{ width: rightSpacer }} />
-        </ScrollView>
+        <View style={styles.headerClip}>
+          <View
+            ref={headerMotion}
+            collapsable={false}
+            style={[styles.headerMotion, { transform: [{ translateX: -offsetRef.current.x }] }]}
+          >
+            <View style={{ width: leftSpacer }} />
+            {days.map((iso) => {
+              const { chips, icons } = headerIcons(iso);
+              return (
+                <DayHead
+                  key={`h-${iso}`}
+                  iso={iso}
+                  width={columnWidth}
+                  isToday={iso === todayISO}
+                  chips={chips}
+                  icons={icons}
+                  onOpenTask={onOpenTask}
+                  composing={composer?.iso === iso && composer.time === ''}
+                  draft={draft}
+                  onDraft={setDraft}
+                  onCompose={() => {
+                    if (composer?.iso === iso && composer.time === '') return;
+                    setDraft('');
+                    setComposer({ iso, time: '' });
+                  }}
+                  onCreate={(name, keepOpen) => onCreateKeepOpen(iso, '', name, keepOpen)}
+                  onCancel={() => setComposer(null)}
+                />
+              );
+            })}
+            <View style={{ width: rightSpacer }} />
+          </View>
+        </View>
       </View>
-      <View
-        ref={hourWrapRef}
-        style={styles.gridScroll}
-        onLayout={() => measureScroller(hourWrapRef, hourViewport)}
-      >
-      <ScrollView
-        ref={hourScrollRef}
-        style={styles.fill}
-        scrollEnabled={scrollEnabled}
-        canCancelContentTouches={!pointerLocked && !scrollLocked}
-        onScroll={(event) => {
-          hourOffset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
-          refreshZones();
-        }}
-        scrollEventThrottle={16}
-      >
-        <View style={[styles.gridRow, { height: gridHeight }]}>
-          <View style={[styles.axis, { height: gridHeight }]}>
+      <View style={styles.bodyRow}>
+        <View style={styles.axisClip}>
+          <View
+            ref={axisMotion}
+            collapsable={false}
+            style={[
+              styles.axis,
+              { height: gridHeight, transform: [{ translateY: -offsetRef.current.y }] },
+            ]}
+          >
             {HOURS.map((hour) => (
               <Text
                 key={hour}
@@ -315,60 +263,60 @@ export function DayCalendar({
               </Text>
             ))}
           </View>
-          <View
-            ref={dayWrapRef}
-            style={styles.fill}
-            onLayout={() => measureScroller(dayWrapRef, dayViewport)}
-          >
-          <ScrollView
-            ref={dayScrollRef}
-            horizontal
-            nestedScrollEnabled
-            scrollEnabled={scrollEnabled}
-            canCancelContentTouches={!pointerLocked && !scrollLocked}
-            showsHorizontalScrollIndicator={false}
-            onScrollBeginDrag={() => beginLinkedScroll('days')}
-            onScrollEndDrag={(event) => {
-              const vx = event.nativeEvent.velocity?.x ?? 0;
-              if (Math.abs(vx) < 0.02) endLinkedScroll('days');
-            }}
-            onMomentumScrollEnd={() => endLinkedScroll('days')}
-            onScroll={(event) => {
-              pairLinkedScroll('days', event.nativeEvent.contentOffset.x);
-            }}
-            scrollEventThrottle={16}
-            testID="calendar-days"
-          >
-            <View style={{ width: leftSpacer }} />
-            {days.map((iso) => (
-              <DayColumn
-                key={iso}
-                iso={iso}
-                isToday={iso === todayISO}
-                width={columnWidth}
-                height={gridHeight}
-                pixelsPerHour={pixelsPerHour}
-                snapInterval={snapInterval}
-                tasks={tasksForDay(iso)}
-                composer={composer?.iso === iso && composer.time !== '' ? composer : null}
-                draft={draft}
-                onDraft={setDraft}
-                onCompose={setComposer}
-                onCreate={(time, name, keepOpen) => onCreateKeepOpen(iso, time, name, keepOpen)}
-                onOpenTask={onOpenTask}
-                childrenOf={childrenOf}
-                onSetDuration={onSetDuration}
-                parentLabel={parentLabel}
-                pinHourScroll={() => {
-                  hourScrollRef.current?.scrollTo({ y: hourOffset.current.y, animated: false });
-                }}
-              />
-            ))}
-            <View style={{ width: rightSpacer }} />
-          </ScrollView>
-          </View>
         </View>
-      </ScrollView>
+        <View
+          ref={dayWrapRef}
+          style={styles.fill}
+          onLayout={() => measureScroller(dayWrapRef, dayViewport)}
+        >
+          <TwoAxisScroll
+            ref={scrollRef}
+            testID="calendar-days"
+            contentWidth={CAL_TOTAL_COLUMNS * Math.max(columnWidth, 1)}
+            contentHeight={gridHeight}
+            scrollEnabled={scrollEnabled}
+            onOffsetChange={handleOffset}
+            onViewportLayout={() => measureScroller(dayWrapRef, dayViewport)}
+          >
+            <View
+              style={[
+                styles.daysRow,
+                {
+                  width: CAL_TOTAL_COLUMNS * Math.max(columnWidth, 1),
+                  height: gridHeight,
+                },
+              ]}
+            >
+              <View style={{ width: leftSpacer, height: gridHeight }} />
+              {days.map((iso) => (
+                <DayColumn
+                  key={iso}
+                  iso={iso}
+                  isToday={iso === todayISO}
+                  width={columnWidth}
+                  height={gridHeight}
+                  pixelsPerHour={pixelsPerHour}
+                  snapInterval={snapInterval}
+                  tasks={tasksForDay(iso)}
+                  composer={composer?.iso === iso && composer.time !== '' ? composer : null}
+                  draft={draft}
+                  onDraft={setDraft}
+                  onCompose={setComposer}
+                  onCreate={(time, name, keepOpen) => onCreateKeepOpen(iso, time, name, keepOpen)}
+                  onOpenTask={onOpenTask}
+                  childrenOf={childrenOf}
+                  onSetDuration={onSetDuration}
+                  parentLabel={parentLabel}
+                  pinHourScroll={() => {
+                    const cur = offsetRef.current;
+                    scrollRef.current?.scrollTo({ x: cur.x, y: cur.y });
+                  }}
+                />
+              ))}
+              <View style={{ width: rightSpacer, height: gridHeight }} />
+            </View>
+          </TwoAxisScroll>
+        </View>
       </View>
     </View>
   );
@@ -401,7 +349,7 @@ function DayHead({
   onCreate: (name: string, keepOpen: boolean) => void;
   onCancel: () => void;
 }) {
-  const { registerZone, bestId, refreshZones } = useDragDrop();
+  const { registerZone, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
   const lock = useRef(createComposerLock()).current;
   const draftRef = useRef(draft);
@@ -411,7 +359,7 @@ function DayHead({
   const wasComposing = useRef(composing);
   const alive = useRef(true);
   const zoneId = `cal-head-${iso}`;
-  const highlighted = bestId === zoneId;
+  const highlighted = useZoneHighlight(zoneId);
 
   useEffect(() => {
     alive.current = true;
@@ -553,7 +501,7 @@ function DayColumn({
   parentLabel: (id: string) => string;
   pinHourScroll: () => void;
 }) {
-  const { registerZone, bestId, refreshZones, drag, getDragSession, subscribeDragMotion } = useDragDrop();
+  const { registerZone, refreshZones, drag, getDragSession, subscribeDragMotion } = useDragDrop();
   const ref = useRef<View>(null);
   const previewRef = useRef<View>(null);
   const colY = useRef(0);
@@ -568,7 +516,7 @@ function DayColumn({
   const wasComposing = useRef(!!composer);
   const alive = useRef(true);
   const zoneId = `cal-${iso}`;
-  const highlighted = bestId === zoneId;
+  const highlighted = useZoneHighlight(zoneId);
   const interval = Math.max(1, snapInterval);
   const pixelsPerHourRef = useRef(pixelsPerHour);
   pixelsPerHourRef.current = pixelsPerHour;
@@ -777,7 +725,7 @@ function CalBlock({
   onSetDuration: (id: string, minutes: number) => void;
   pinHourScroll: () => void;
 }) {
-  const { registerZone, bestId, armDrag, activateDrag, cancelDrag, refreshZones, setScrollLocked } =
+  const { registerZone, armDrag, activateDrag, cancelDrag, refreshZones, setScrollLocked } =
     useDragDrop();
   const ref = useRef<View>(null);
   const nestId = `nest-cal-${task.id}`;
@@ -786,7 +734,7 @@ function CalBlock({
   const [preview, setPreview] = useState(0);
   const duration = preview || task.duration;
   const height = Math.max(28, (duration / 60) * pixelsPerHour);
-  const highlighted = bestId === nestId;
+  const highlighted = useZoneHighlight(nestId);
   const didResize = useRef(false);
   const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
   const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
@@ -857,7 +805,6 @@ function CalBlock({
         style={[styles.block, highlighted && styles.blockHot]}
       >
         {task.imageDownloadURL ? <Image source={{ uri: task.imageDownloadURL }} style={styles.blockPhoto} /> : null}
-        <Text style={styles.blockTime}>{task.startTime}</Text>
         <View style={styles.blockTitleRow}>
           <Text style={styles.blockName} numberOfLines={2}>
             {task.name}
@@ -1030,9 +977,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  headerScroll: {
+  headerClip: {
     flex: 1,
+    overflow: 'hidden',
     maxHeight: 88,
+  },
+  headerMotion: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   dayHead: {
     minHeight: 36,
@@ -1120,12 +1072,16 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: '800',
   },
-  gridScroll: {
+  bodyRow: {
     flex: 1,
-    overflow: 'hidden',
-  },
-  gridRow: {
     flexDirection: 'row',
+  },
+  daysRow: {
+    flexDirection: 'row',
+  },
+  axisClip: {
+    width: TIME_AXIS,
+    overflow: 'hidden',
   },
   axis: {
     width: TIME_AXIS,
@@ -1213,11 +1169,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.dropBorder,
     backgroundColor: colors.dropPreview,
-  },
-  blockTime: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: '600',
   },
   blockName: {
     color: colors.ink,

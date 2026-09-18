@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "actions.life",
+    "name": "action.expo",
     "slug": "actions-life",
     "owner": "eltonlin",
     "scheme": "actionslife",
@@ -20,6 +20,7 @@
       "usesAppleSignIn": true,
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
+        "CFBundleDisplayName": "action.expo",
         "ITSAppUsesNonExemptEncryption": false
       }
     },

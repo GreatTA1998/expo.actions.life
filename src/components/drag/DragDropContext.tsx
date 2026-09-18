@@ -13,15 +13,10 @@ import {
 import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
-import {
-  clipRectToWindow,
-  edgeScrollDelta,
-  pickBestZoneId,
-  readWindowRect,
-  windowToLayer,
-  type ZoneHit,
-} from './geometry';
+import { edgeScrollDelta, readWindowRect } from './geometry';
+import { paintGhostNative } from './ghostPaint';
 import { createDragGesture } from './gesture';
+import { hitTestZones } from './hitTest';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
@@ -68,7 +63,6 @@ type DragContextValue = {
   drag: DragSession | null;
   pointerLocked: boolean;
   scrollLocked: boolean;
-  bestId: string;
   registerZone: (zone: Omit<Zone, 'rect'>) => () => void;
   registerScroller: (scroller: Scroller) => () => void;
   armDrag: (
@@ -87,6 +81,9 @@ type DragContextValue = {
   /** Disable inbox/calendar scroll while duration-resizing (web preventTouchScroll). */
   setScrollLocked: (locked: boolean) => void;
   getDragSession: () => DragSession | null;
+  getBestId: () => string;
+  /** Highlight updates without putting bestId on the shared context value. */
+  subscribeBestId: (listener: (id: string) => void) => () => void;
   /** Per-frame drag motion without React re-rendering the forest. */
   subscribeDragMotion: (listener: () => void) => () => void;
 };
@@ -94,7 +91,6 @@ type DragContextValue = {
 const DragContext = createContext<DragContextValue | null>(null);
 const MOUSE_SLOP = 2;
 const TOUCH_SLOP = 5;
-const PROBE_H = 2;
 const EDGE = 44;
 const SCROLL_PX = 16;
 
@@ -129,10 +125,10 @@ type GhostNative = View & {
 
 export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [drag, setDrag] = useState<DragSession | null>(emptySession);
-  const [bestId, setBestId] = useState('');
   const [pointerLocked, setPointerLocked] = useState(false);
   const [scrollLocked, setScrollLockedState] = useState(false);
   const [ghostTransform, setGhostTransform] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [ghostBestId, setGhostBestId] = useState('');
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
   const pendingActivate = useRef(false);
@@ -147,8 +143,8 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const refreshRaf = useRef(0);
   const pendingMove = useRef<{ x: number; y: number } | null>(null);
   const motionListeners = useRef(new Set<() => void>());
+  const bestListeners = useRef(new Set<(id: string) => void>());
   onDropRef.current = onDrop;
-  bestRef.current = bestId;
 
   const measureLayer = useCallback(() => {
     const node = layerRef.current as (View & { measureInWindow?: Function }) | null;
@@ -163,25 +159,31 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, []);
 
   const paintGhost = useCallback((session: DragSession) => {
-    const local = windowToLayer(session.x, session.y, layerOrigin.current);
     if (Platform.OS === 'web') {
-      setGhostTransform({ x: local.x, y: local.y });
-    } else {
-      ghostRef.current?.setNativeProps?.({
-        style: {
-          width: session.width,
-          height: session.height,
-          transform: [{ translateX: local.x }, { translateY: local.y }],
-        },
-      });
+      const local = paintGhostNative(null, session, layerOrigin.current);
+      setGhostTransform(local);
+      return;
     }
+    paintGhostNative(ghostRef.current, session, layerOrigin.current);
   }, []);
 
   const notifyDragMotion = useCallback(() => {
     for (const listener of motionListeners.current) listener();
   }, []);
 
+  const notifyBestId = useCallback((id: string) => {
+    for (const listener of bestListeners.current) listener(id);
+  }, []);
+
   const getDragSession = useCallback(() => dragRef.current, []);
+  const getBestId = useCallback(() => bestRef.current, []);
+
+  const subscribeBestId = useCallback((listener: (id: string) => void) => {
+    bestListeners.current.add(listener);
+    return () => {
+      bestListeners.current.delete(listener);
+    };
+  }, []);
 
   const subscribeDragMotion = useCallback((listener: () => void) => {
     motionListeners.current.add(listener);
@@ -227,34 +229,13 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, [measureAllZones]);
 
   const pickZone = useCallback((session: DragSession) => {
-    const win = Dimensions.get('window');
-    const probe = {
-      left: session.x,
-      top: session.y,
-      right: session.x + Math.max(session.width, 8),
-      bottom: session.y + PROBE_H,
-    };
-    const hits: ZoneHit[] = [];
-    for (const [id, zone] of zones.current) {
-      if (zone.ownerTaskId && zone.ownerTaskId === session.id) continue;
-      const raw = zone.rect;
-      if (!raw || raw.width <= 0 || raw.height <= 0) continue;
-      const rect = clipRectToWindow(raw, win);
-      if (!rect) continue;
-      const left = Math.max(probe.left, rect.x);
-      const top = Math.max(probe.top, rect.y);
-      const right = Math.min(probe.right, rect.x + rect.width);
-      const bottom = Math.min(probe.bottom, rect.y + rect.height);
-      const area = Math.max(0, right - left) * Math.max(0, bottom - top);
-      if (area <= 0) continue;
-      hits.push({ id, area, left: rect.x, rect });
-    }
-    const best = pickBestZoneId(hits);
+    const best = hitTestZones(session, zones.current.values(), Dimensions.get('window'));
     if (best !== bestRef.current) {
       bestRef.current = best;
-      setBestId(best);
+      setGhostBestId(best);
+      notifyBestId(best);
     }
-  }, []);
+  }, [notifyBestId]);
 
   const lockScrollers = useCallback((enabled: boolean) => {
     for (const scroller of scrollers.current.values()) {
@@ -367,7 +348,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
             setPointerLocked(false);
             dragRef.current = null;
             setDrag(null);
-            setBestId('');
+            bestRef.current = '';
+            setGhostBestId('');
+            notifyBestId('');
             return;
           }
         } else {
@@ -378,7 +361,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       if (!current?.active) return;
       pendingMove.current = { x: pageX, y: pageY };
       // Keep dragRef live with the pointer. paintGhost on web writes
-      // ghostTransform from this session; useLayoutEffect(bestId) re-paints from
+      // ghostTransform from this session; useLayoutEffect(drag) re-paints from
       // dragRef and must not regress to a stale position.
       const live: DragSession = {
         ...current,
@@ -393,7 +376,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         moveRaf.current = requestAnimationFrame(flushMove);
       }
     },
-    [activateDrag, flushMove, lockScrollers, paintGhost],
+    [activateDrag, flushMove, lockScrollers, notifyBestId, paintGhost],
   );
 
   const cancelDrag = useCallback(() => {
@@ -402,6 +385,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       cancelAnimationFrame(moveRaf.current);
       moveRaf.current = 0;
     }
+    if (refreshRaf.current) {
+      cancelAnimationFrame(refreshRaf.current);
+      refreshRaf.current = 0;
+    }
     pendingMove.current = null;
     dragRef.current = null;
     bestRef.current = '';
@@ -409,9 +396,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     lockScrollers(true);
     setPointerLocked(false);
     setDrag(null);
-    setBestId('');
+    setGhostBestId('');
+    notifyBestId('');
     notifyDragMotion();
-  }, [gesture, lockScrollers, notifyDragMotion]);
+  }, [gesture, lockScrollers, notifyBestId, notifyDragMotion]);
 
   const endDrag = useCallback(() => {
     if (moveRaf.current) {
@@ -528,7 +516,6 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       drag,
       pointerLocked,
       scrollLocked,
-      bestId,
       registerZone,
       registerScroller,
       armDrag,
@@ -539,15 +526,17 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       refreshZones,
       setScrollLocked,
       getDragSession,
+      getBestId,
+      subscribeBestId,
       subscribeDragMotion,
     }),
     [
       activateDrag,
       armDrag,
-      bestId,
       cancelDrag,
       drag,
       endDrag,
+      getBestId,
       getDragSession,
       moveDrag,
       pointerLocked,
@@ -556,6 +545,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       registerZone,
       scrollLocked,
       setScrollLocked,
+      subscribeBestId,
       subscribeDragMotion,
     ],
   );
@@ -567,7 +557,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   useLayoutEffect(() => {
     const session = dragRef.current;
     if (session?.active) paintGhost(session);
-  }, [bestId, drag?.active, drag?.id, drag?.name, drag?.width, drag?.height, paintGhost]);
+  }, [drag?.active, drag?.id, drag?.name, drag?.width, drag?.height, paintGhost]);
 
   return (
     <DragContext.Provider value={value}>
@@ -608,7 +598,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
             ]}
           >
             <Text testID="drop-best" numberOfLines={1} style={styles.ghostMeta}>
-              {bestId}
+              {ghostBestId}
             </Text>
             <Text numberOfLines={2} style={styles.ghostText}>
               {drag.name || 'Untitled'}
@@ -621,8 +611,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
 }
 
 export function DropPreview({ id, children, style }: { id: string; children?: ReactNode; style?: object }) {
-  const { bestId } = useDragDrop();
-  const on = bestId === id;
+  const { getBestId, subscribeBestId } = useDragDrop();
+  const [on, setOn] = useState(() => getBestId() === id);
+  useEffect(() => {
+    setOn(getBestId() === id);
+    return subscribeBestId((best) => setOn(best === id));
+  }, [getBestId, id, subscribeBestId]);
   return <View style={[style, on ? styles.preview : null]}>{children}</View>;
 }
 

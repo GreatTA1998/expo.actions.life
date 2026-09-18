@@ -68,16 +68,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>actions.life</Text>
-          <Text style={styles.sub}>{session.email || 'Guest'}</Text>
-        </View>
-        <Pressable onPress={onSignOut} hitSlop={8}>
-          <Text style={styles.link}>Sign out</Text>
-        </Pressable>
-      </View>
-
       <View style={[styles.body, { paddingBottom: insets.bottom }]}>
         {tab === 'calendar' ? (
           <HomeScreen store={store} onOpen={setOpenId} onMenu={setMenuTask} />
@@ -224,16 +214,6 @@ function Action({ label, onPress }: { label: string; onPress: () => void }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navbar },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  brand: { color: colors.ink, fontSize: type.body, fontWeight: '700' },
-  sub: { color: colors.muted, fontSize: type.micro, marginTop: 2 },
-  link: { color: colors.accent, fontWeight: '600' },
   body: { flex: 1 },
   undo: {
     marginHorizontal: 12,

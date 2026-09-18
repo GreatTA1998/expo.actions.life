@@ -4,6 +4,7 @@ import { matchHabitTemplates } from '../services/seed';
 import { colors, type } from '../theme';
 import { createComposerLock } from './composerLock';
 import { HOLD_DELAY, useDragDrop } from './drag/DragDropContext';
+import { useZoneHighlight } from './drag/useZoneHighlight';
 
 type CreateExtras = { duration?: number };
 
@@ -30,7 +31,7 @@ export function Dropzone({
   onSubmit,
   onCancel,
 }: Props) {
-  const { registerZone, bestId, refreshZones } = useDragDrop();
+  const { registerZone, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
   const picking = useRef(false);
   const alive = useRef(true);
@@ -41,7 +42,7 @@ export function Dropzone({
   const [draft, setDraft] = useState('');
   composingRef.current = composing;
   const root = depth === 0;
-  const highlighted = bestId === zoneId;
+  const highlighted = useZoneHighlight(zoneId);
   const templates = matchHabitTemplates(draft);
 
   function setDraftValue(value: string) {
