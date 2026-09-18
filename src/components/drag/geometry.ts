@@ -53,22 +53,46 @@ export function snapDuration(minutes: number, interval = 15): number {
 }
 
 /** Sync window rect on web; `measureInWindow` is async and misses fast pointer passes. */
-export function readWindowRect(node: unknown): Rect | null {
+export function readWindowRect(node: unknown, zoneId?: string): Rect | null {
   const el = node as {
     getBoundingClientRect?: () => { x: number; y: number; width: number; height: number };
-    measureInWindow?: (
-      cb: (x: number, y: number, width: number, height: number) => void,
-    ) => void;
   } | null;
   const rect = el?.getBoundingClientRect?.();
   if (rect && (rect.width > 0 || rect.height > 0)) {
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }
+  if (zoneId && typeof document !== 'undefined') {
+    const host = document.querySelector(zoneSelector(zoneId));
+    const hostRect = host?.getBoundingClientRect();
+    if (hostRect && (hostRect.width > 0 || hostRect.height > 0)) {
+      return { x: hostRect.x, y: hostRect.y, width: hostRect.width, height: hostRect.height };
+    }
+  }
   return null;
 }
 
-export function measureNode(node: unknown, cb: (rect: Rect) => void): void {
-  const sync = readWindowRect(node);
+function escapeId(id: string): string {
+  return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+}
+
+export function zoneSelector(zoneId: string): string {
+  if (zoneId.startsWith('cal-') && !zoneId.startsWith('cal-block') && !zoneId.startsWith('cal-resize')) {
+    return `[data-testid="day-column-${zoneId.slice(4)}"], [data-nativeid="${zoneId}"], #${escapeId(zoneId)}`;
+  }
+  if (zoneId.startsWith('nest-cal-')) {
+    return `[data-testid="cal-block-${zoneId.slice(9)}"], [data-nativeid="${zoneId}"]`;
+  }
+  if (zoneId.startsWith('nest-')) {
+    return `[data-testid="task-row-${zoneId.slice(5)}"], [data-nativeid="${zoneId}"]`;
+  }
+  if (zoneId.startsWith('list-')) {
+    return `[data-nativeid="${zoneId}"], [data-testid="${zoneId.replace(/^list-/, 'dropzone-')}"]`;
+  }
+  return `[data-testid="${zoneId}"], [data-nativeid="${zoneId}"], #${escapeId(zoneId)}`;
+}
+
+export function measureNode(node: unknown, cb: (rect: Rect) => void, zoneId?: string): void {
+  const sync = readWindowRect(node, zoneId);
   if (sync) {
     cb(sync);
     return;

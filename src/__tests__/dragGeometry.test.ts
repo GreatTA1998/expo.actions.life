@@ -7,6 +7,7 @@ import {
   measureNode,
   readWindowRect,
   snapDuration,
+  zoneSelector,
 } from '../components/drag/geometry';
 
 test('clipRectToWindow drops off-screen day columns', () => {
@@ -24,6 +25,13 @@ test('edgeScrollDelta scrolls only when the pointer is on that scroller edge', (
   assert.equal(edgeScrollDelta({ x: 20, y: 550 }, viewport, 'y', 44, 16), 0);
   assert.equal(edgeScrollDelta({ x: 20, y: 100 }, viewport, 'y', 44, 16), 0);
   assert.equal(edgeScrollDelta({ x: 10, y: 420 }, viewport, 'x', 44, 16), -16);
+});
+
+test('zoneSelector maps drop ids to rendered test ids', () => {
+  assert.match(zoneSelector('cal-2026-09-18'), /day-column-2026-09-18/);
+  assert.match(zoneSelector('nest-cal-photo-bird'), /cal-block-photo-bird/);
+  assert.match(zoneSelector('nest-todo-drag'), /task-row-todo-drag/);
+  assert.match(zoneSelector('list-root-0'), /dropzone-root-0/);
 });
 
 test('measureNode prefers a sync getBoundingClientRect', () => {

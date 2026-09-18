@@ -306,6 +306,7 @@ function DayColumn({
     <Pressable
       ref={ref}
       collapsable={false}
+      nativeID={zoneId}
       testID={`day-column-${iso}`}
       onLayout={() => refreshZones()}
       onPress={(event) => {
@@ -396,9 +397,13 @@ function CalBlock({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number) {
-    measureNode(ref.current, (rect) => {
-      armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, rect);
-    });
+    measureNode(
+      ref.current,
+      (rect) => {
+        armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, rect);
+      },
+      `cal-block-${task.id}`,
+    );
   }
 
   return (
@@ -406,6 +411,7 @@ function CalBlock({
       <Pressable
         ref={ref}
         collapsable={false}
+        nativeID={nestId}
         testID={`cal-block-${task.id}`}
         onLayout={() => refreshZones()}
         onPress={() => {

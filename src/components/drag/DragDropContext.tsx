@@ -121,7 +121,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const refreshZones = useCallback(() => {
     for (const zone of zones.current.values()) {
       const node = zone.ref.current as (View & { measureInWindow?: Function }) | null;
-      const sync = readWindowRect(node);
+      const sync = readWindowRect(node, zone.id);
       if (sync) {
         zone.rect = sync;
         continue;

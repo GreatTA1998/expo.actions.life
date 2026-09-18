@@ -49,9 +49,13 @@ export function TaskRow({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number) {
-    measureNode(rowRef.current, (rect) => {
-      armDrag(task, 'list', pageX, pageY, rect);
-    });
+    measureNode(
+      rowRef.current,
+      (rect) => {
+        armDrag(task, 'list', pageX, pageY, rect);
+      },
+      `task-row-${task.id}`,
+    );
   }
 
   return (
@@ -59,6 +63,7 @@ export function TaskRow({
       <View
         ref={rowRef}
         collapsable={false}
+        nativeID={`nest-${task.id}`}
         testID={`task-row-${task.id}`}
         onLayout={() => refreshZones()}
         style={[styles.row, { paddingLeft: 12 + depth * 18 }, highlighted && styles.nestHot]}

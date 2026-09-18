@@ -46,6 +46,7 @@ export function Dropzone({
     <View
       ref={ref}
       collapsable={false}
+      nativeID={zoneId}
       testID={`dropzone-${parentID || 'root'}-${index}`}
       onLayout={() => refreshZones()}
       style={[
