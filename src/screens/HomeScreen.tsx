@@ -107,6 +107,11 @@ export function HomeScreen({ store, onOpen, onMenu }: Props) {
                 onSetDuration={(id, minutes) => {
                   void store.setDuration(id, minutes);
                 }}
+                parentLabel={(id) => {
+                  const task = store.task(id);
+                  const parent = task?.parentID ? store.task(task.parentID) : undefined;
+                  return parent?.name.trim().split(/\s+/)[0] ?? '';
+                }}
               />
             </ErrorBoundary>
           }

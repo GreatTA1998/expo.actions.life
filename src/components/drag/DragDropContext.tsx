@@ -271,20 +271,35 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const move = (event: PointerEvent) => {
+    const moveAt = (x: number, y: number, event?: { preventDefault?: () => void }) => {
       if (!dragRef.current) return;
-      if (dragRef.current.active) event.preventDefault();
-      moveDrag(event.clientX, event.clientY);
+      if (dragRef.current.active) event?.preventDefault?.();
+      moveDrag(x, y);
+    };
+    const onPointerMove = (event: PointerEvent) => moveAt(event.clientX, event.clientY, event);
+    const onMouseMove = (event: MouseEvent) => moveAt(event.clientX, event.clientY, event);
+    const onTouchMove = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      moveAt(touch.clientX, touch.clientY, event);
     };
     const up = () => {
       if (!dragRef.current) return;
       if (dragRef.current.active) endDrag();
       else cancelDrag();
     };
-    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', up);
     window.addEventListener('pointerup', up);
     return () => {
-      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', up);
       window.removeEventListener('pointerup', up);
     };
   }, [cancelDrag, endDrag, moveDrag]);
@@ -371,6 +386,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
             pointerEvents="none"
             style={[styles.ghost, { width: drag.width, height: drag.height, transform: [{ translateX: drag.x }, { translateY: drag.y }] }]}
           >
+            <Text testID="drop-best" numberOfLines={1} style={styles.ghostMeta}>
+              {bestId}
+            </Text>
             <Text numberOfLines={2} style={styles.ghostText}>
               {drag.name || 'Untitled'}
             </Text>
@@ -411,6 +429,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: type.body,
     fontWeight: '600',
+  },
+  ghostMeta: {
+    color: colors.muted,
+    fontSize: 10,
   },
   preview: {
     backgroundColor: colors.dropPreview,

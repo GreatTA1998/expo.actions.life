@@ -34,6 +34,7 @@ type Props = {
   onOpenTask: (id: string) => void;
   onCreateAt: (iso: string, time: string, name: string) => void;
   onSetDuration: (id: string, minutes: number) => void;
+  parentLabel: (id: string) => string;
 };
 
 export function DayCalendar({
@@ -44,6 +45,7 @@ export function DayCalendar({
   onOpenTask,
   onCreateAt,
   onSetDuration,
+  parentLabel,
 }: Props) {
   const [past, setPast] = useState(INITIAL_PAST);
   const [future, setFuture] = useState(INITIAL_FUTURE);
@@ -70,7 +72,7 @@ export function DayCalendar({
     pixelsPerHour,
   );
   const centered = useRef(false);
-  const { refreshZones, registerScroller } = useDragDrop();
+  const { refreshZones, registerScroller, drag } = useDragDrop();
 
   useEffect(() => {
     const unHour = registerScroller({
@@ -167,7 +169,14 @@ export function DayCalendar({
       >
         <View style={{ width: TIME_AXIS }} />
         {days.map((iso) => (
-          <DayHead key={`h-${iso}`} iso={iso} width={columnWidth} isToday={iso === todayISO} />
+          <DayHead
+            key={`h-${iso}`}
+            iso={iso}
+            width={columnWidth}
+            isToday={iso === todayISO}
+            chips={tasksForDay(iso).filter((task) => !task.startTime)}
+            onOpenTask={onOpenTask}
+          />
         ))}
       </ScrollView>
       <View
@@ -178,6 +187,7 @@ export function DayCalendar({
       <ScrollView
         ref={hourScrollRef}
         style={styles.fill}
+        scrollEnabled={!drag}
         contentOffset={{ x: 0, y: focusY }}
         onScroll={(event) => {
           hourOffset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
@@ -205,6 +215,7 @@ export function DayCalendar({
             ref={dayScrollRef}
             horizontal
             nestedScrollEnabled
+            scrollEnabled={!drag}
             showsHorizontalScrollIndicator={false}
             onScroll={(event) => {
               const x = event.nativeEvent.contentOffset.x;
@@ -236,6 +247,7 @@ export function DayCalendar({
                 onOpenTask={onOpenTask}
                 childrenOf={childrenOf}
                 onSetDuration={onSetDuration}
+                parentLabel={parentLabel}
               />
             ))}
           </ScrollView>
@@ -247,7 +259,19 @@ export function DayCalendar({
   );
 }
 
-function DayHead({ iso, width, isToday }: { iso: string; width: number; isToday: boolean }) {
+function DayHead({
+  iso,
+  width,
+  isToday,
+  chips,
+  onOpenTask,
+}: {
+  iso: string;
+  width: number;
+  isToday: boolean;
+  chips: TaskRecord[];
+  onOpenTask: (id: string) => void;
+}) {
   const { registerZone, bestId, refreshZones } = useDragDrop();
   const ref = useRef<View>(null);
   const zoneId = `cal-head-${iso}`;
@@ -273,6 +297,20 @@ function DayHead({ iso, width, isToday }: { iso: string; width: number; isToday:
       <Text style={[styles.dow, isToday && styles.dowToday]}>
         {`${weekdayShort(iso)} ${dayNumber(iso)}`}
       </Text>
+      <View style={styles.chipRow}>
+        {chips.map((task) => (
+          <Pressable
+            key={task.id}
+            testID={`cal-chip-${task.id}`}
+            onPress={() => onOpenTask(task.id)}
+            style={styles.allDayChip}
+          >
+            <Text numberOfLines={1} style={styles.chipText}>
+              {task.name}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -291,6 +329,7 @@ function DayColumn({
   onOpenTask,
   childrenOf,
   onSetDuration,
+  parentLabel,
 }: {
   iso: string;
   width: number;
@@ -305,9 +344,11 @@ function DayColumn({
   onOpenTask: (id: string) => void;
   childrenOf: (id: string) => TaskTree[];
   onSetDuration: (id: string, minutes: number) => void;
+  parentLabel: (id: string) => string;
 }) {
-  const { registerZone, bestId, refreshZones } = useDragDrop();
+  const { registerZone, bestId, refreshZones, drag } = useDragDrop();
   const ref = useRef<View>(null);
+  const colY = useRef(0);
   const zoneId = `cal-${iso}`;
   const highlighted = bestId === zoneId;
 
@@ -330,18 +371,40 @@ function DayColumn({
       collapsable={false}
       nativeID={zoneId}
       testID={`day-column-${iso}`}
-      onLayout={() => refreshZones()}
+      onLayout={() => {
+        refreshZones();
+        measureNode(
+          ref.current,
+          (rect) => {
+            colY.current = rect.y;
+          },
+          zoneId,
+        );
+      }}
       onPress={(event) => {
         measureNode(ref.current, (rect) => {
           onDraft('');
           onCompose({ iso, time: timeAt(event.nativeEvent.pageY, rect.y) });
         });
       }}
-      style={[styles.column, { width, height }, highlighted && styles.columnHot]}
+      style={[styles.column, { width, height }]}
     >
       {HOURS.map((hour) => (
         <View key={hour} style={[styles.hourLine, { top: hour * pixelsPerHour }]} />
       ))}
+      {highlighted && drag ? (
+        <View
+          pointerEvents="none"
+          testID={`cal-preview-${iso}`}
+          style={[
+            styles.calPreview,
+            {
+              top: (snapMinutes(((drag.y - colY.current) / pixelsPerHour) * 60, 15) / 60) * pixelsPerHour,
+              height: Math.max(28, drag.height),
+            },
+          ]}
+        />
+      ) : null}
       {tasks
         .filter((task) => task.startTime)
         .map((task) => (
@@ -349,6 +412,7 @@ function DayColumn({
             key={task.id}
             task={task}
             children={childrenOf(task.id)}
+            parentLabel={parentLabel(task.id)}
             pixelsPerHour={pixelsPerHour}
             onOpenTask={onOpenTask}
             onSetDuration={onSetDuration}
@@ -388,12 +452,14 @@ function DayColumn({
 function CalBlock({
   task,
   children,
+  parentLabel,
   pixelsPerHour,
   onOpenTask,
   onSetDuration,
 }: {
   task: TaskRecord;
   children: TaskTree[];
+  parentLabel: string;
   pixelsPerHour: number;
   onOpenTask: (id: string) => void;
   onSetDuration: (id: string, minutes: number) => void;
@@ -457,9 +523,12 @@ function CalBlock({
       >
         {task.imageDownloadURL ? <Image source={{ uri: task.imageDownloadURL }} style={styles.blockPhoto} /> : null}
         <Text style={styles.blockTime}>{task.startTime}</Text>
-        <Text style={styles.blockName} numberOfLines={2}>
-          {task.name}
-        </Text>
+        <View style={styles.blockTitleRow}>
+          <Text style={styles.blockName} numberOfLines={2}>
+            {task.name}
+          </Text>
+          {parentLabel ? <Text style={styles.parentBadge}>{parentLabel}</Text> : null}
+        </View>
         {children.length ? (
           <View pointerEvents="none" style={styles.nestedList} testID={`cal-nested-${task.id}`}>
             {children.map((node) => (
@@ -595,16 +664,58 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   headerScroll: {
-    maxHeight: 44,
+    maxHeight: 64,
     flexGrow: 0,
   },
   dayHead: {
-    height: 36,
+    minHeight: 36,
     alignItems: 'flex-start',
     justifyContent: 'center',
     paddingLeft: 8,
+    paddingVertical: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    paddingRight: 6,
+    paddingTop: 2,
+  },
+  allDayChip: {
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    maxWidth: 120,
+  },
+  chipText: {
+    color: colors.ink,
+    fontSize: 11,
+  },
+  calPreview: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.dropBorder,
+    backgroundColor: colors.dropPreview,
+    zIndex: 1,
+  },
+  blockTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  parentBadge: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '600',
   },
   dow: {
     color: colors.ink,
