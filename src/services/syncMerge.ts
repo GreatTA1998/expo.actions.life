@@ -99,9 +99,11 @@ export function toFirestoreProfile(profile: {
   pixelsPerHour: number;
   calColumnWidth: number;
 }) {
+  // Never merge an empty email: web boot waits on a truthy Firestore `email`,
+  // and Expo's default/guest profile is `email: ''`.
   return {
     uid: profile.uid,
-    email: profile.email,
+    ...(profile.email ? { email: profile.email } : {}),
     maxOrderValue: profile.maxOrderValue,
     calendarTheme: profile.calendarTheme,
     fontScale: profile.fontScale,

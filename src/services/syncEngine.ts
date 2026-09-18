@@ -88,9 +88,12 @@ export class SyncEngine {
           drained += 1;
         }
       }
-      await setDoc(doc(firebase.db, `users/${input.uid}`), toFirestoreProfile(input.profile), {
-        merge: true,
-      });
+      const email = input.profile.email || firebase.auth.currentUser.email || '';
+      await setDoc(
+        doc(firebase.db, `users/${input.uid}`),
+        toFirestoreProfile({ ...input.profile, email }),
+        { merge: true },
+      );
       await this.repo.clearOutbox(input.uid);
       return { drained, reason: 'ok' };
     } catch (error) {
