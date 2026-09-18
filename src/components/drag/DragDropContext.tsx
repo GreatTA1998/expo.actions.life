@@ -499,7 +499,20 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   // lets zone-highlight / rAF setDrag re-renders snap the ghost back to a stale spot.
   useLayoutEffect(() => {
     const session = dragRef.current;
-    if (session?.active) paintGhost(session);
+    if (!session?.active) return;
+    // Use pending move position if available to avoid snapping to stale dragRef.
+    const pending = pendingMove.current;
+    if (pending) {
+      paintGhost({
+        ...session,
+        pointerX: pending.x,
+        pointerY: pending.y,
+        x: pending.x - session.offsetX,
+        y: pending.y - session.offsetY,
+      });
+    } else {
+      paintGhost(session);
+    }
   }, [bestId, drag?.active, drag?.id, drag?.name, drag?.width, drag?.height, paintGhost]);
 
   return (
