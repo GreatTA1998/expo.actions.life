@@ -222,8 +222,9 @@ export function TaskRow({
             onCancel={() => onCompose(null)}
           />
           <Pressable
+            collapsable={false}
             testID={`empty-padding-${task.id}`}
-            accessibilityLabel="Add a subtask here"
+            accessibilityLabel="Add a subtask on empty paper"
             onPress={() => onCompose({ parentID: task.id, index: children.length })}
             style={styles.nestedEmpty}
           />
