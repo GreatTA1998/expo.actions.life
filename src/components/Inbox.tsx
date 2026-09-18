@@ -29,7 +29,7 @@ export function Inbox({
   const offset = useRef({ x: 0, y: 0 });
   const viewport = useRef<Rect | null>(null);
   const [composer, setComposer] = useState<ComposerSlot>(null);
-  const { registerScroller, refreshZones, drag } = useDragDrop();
+  const { registerScroller, refreshZones, drag, pointerLocked } = useDragDrop();
 
   useEffect(() => {
     return registerScroller({
@@ -55,7 +55,7 @@ export function Inbox({
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
-        scrollEnabled={!drag}
+        scrollEnabled={!drag && !pointerLocked}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         onScroll={(event) => {

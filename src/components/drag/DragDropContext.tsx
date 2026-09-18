@@ -56,6 +56,7 @@ export type Scroller = {
 
 type DragContextValue = {
   drag: DragSession | null;
+  pointerLocked: boolean;
   bestId: string;
   registerZone: (zone: Omit<Zone, 'rect'>) => () => void;
   registerScroller: (scroller: Scroller) => () => void;
@@ -109,6 +110,7 @@ type ProviderProps = {
 export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const [drag, setDrag] = useState<DragSession | null>(emptySession);
   const [bestId, setBestId] = useState('');
+  const [pointerLocked, setPointerLocked] = useState(false);
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
   const pendingActivate = useRef(false);
@@ -191,11 +193,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   );
 
   const activateDrag = useCallback(() => {
+    pendingActivate.current = true;
+    setPointerLocked(true);
     const session = dragRef.current;
-    if (!session) {
-      pendingActivate.current = true;
-      return;
-    }
+    if (!session) return;
     if (session.active) return;
     const next = { ...session, active: true };
     dragRef.current = next;
@@ -211,8 +212,10 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       if (!session.active) {
         const slop = Platform.OS === 'web' ? MOUSE_SLOP : TOUCH_SLOP;
         if (Math.hypot(pageX - session.pointerX, pageY - session.pointerY) > slop) {
-          if (Platform.OS === 'web') activateDrag();
+          if (Platform.OS === 'web' || pendingActivate.current) activateDrag();
           else {
+            pendingActivate.current = false;
+            setPointerLocked(false);
             dragRef.current = null;
             setDrag(null);
             setBestId('');
@@ -242,6 +245,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     dragRef.current = null;
     bestRef.current = '';
     pendingActivate.current = false;
+    setPointerLocked(false);
     setDrag(null);
     setBestId('');
   }, []);
@@ -353,6 +357,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const value = useMemo<DragContextValue>(
     () => ({
       drag,
+      pointerLocked,
       bestId,
       registerZone,
       registerScroller,
@@ -371,20 +376,33 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       drag,
       endDrag,
       moveDrag,
+      pointerLocked,
       refreshZones,
       registerScroller,
       registerZone,
     ],
   );
 
+  const nativeHolding = () => Platform.OS !== 'web' && (pendingActivate.current || !!dragRef.current?.active);
+
   return (
     <DragContext.Provider value={value}>
       <View
         style={styles.fill}
-        onMoveShouldSetResponderCapture={() => Platform.OS !== 'web' && !!dragRef.current?.active}
+        onStartShouldSetResponderCapture={nativeHolding}
+        onMoveShouldSetResponderCapture={nativeHolding}
+        onResponderTerminationRequest={() => !nativeHolding()}
         onResponderMove={(event) => moveDrag(event.nativeEvent.pageX, event.nativeEvent.pageY)}
         onResponderRelease={endDrag}
         onResponderTerminate={() => {
+          if (Platform.OS !== 'web' && !pendingActivate.current && !dragRef.current?.active) cancelDrag();
+        }}
+        onTouchEnd={() => {
+          if (Platform.OS === 'web') return;
+          if (dragRef.current?.active) endDrag();
+          else if (pendingActivate.current || pointerLocked) cancelDrag();
+        }}
+        onTouchCancel={() => {
           if (Platform.OS !== 'web') cancelDrag();
         }}
       >

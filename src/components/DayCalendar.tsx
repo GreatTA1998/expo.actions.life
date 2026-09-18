@@ -72,7 +72,7 @@ export function DayCalendar({
   const focusY = calendarJumpToNowY(nowHM(), pixelsPerHour);
   const centered = useRef(false);
   const hoursPinned = useRef(false);
-  const { refreshZones, registerScroller, drag } = useDragDrop();
+  const { refreshZones, registerScroller, drag, pointerLocked } = useDragDrop();
 
   useEffect(() => {
     const unHour = registerScroller({
@@ -203,7 +203,7 @@ export function DayCalendar({
       <ScrollView
         ref={hourScrollRef}
         style={styles.fill}
-        scrollEnabled={!drag}
+        scrollEnabled={!drag && !pointerLocked}
         contentOffset={{ x: 0, y: focusY }}
         onScroll={(event) => {
           hourOffset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
@@ -231,7 +231,7 @@ export function DayCalendar({
             ref={dayScrollRef}
             horizontal
             nestedScrollEnabled
-            scrollEnabled={!drag}
+            scrollEnabled={!drag && !pointerLocked}
             showsHorizontalScrollIndicator={false}
             onScroll={(event) => {
               const x = event.nativeEvent.contentOffset.x;
