@@ -483,6 +483,12 @@ function DayHead({
             style={styles.headInput}
             testID={`cal-head-input-${iso}`}
             onSubmitEditing={() => commit(true)}
+            onEndEditing={() =>
+              lock.scheduleBlur(() => {
+                if (!alive.current) return;
+                commit(false);
+              })
+            }
             onBlur={() =>
               lock.scheduleBlur(() => {
                 if (!alive.current) return;
@@ -692,6 +698,12 @@ function DayColumn({
             style={styles.calInput}
             testID={`cal-input-${iso}`}
             onSubmitEditing={() => commit(true)}
+            onEndEditing={() =>
+              lock.scheduleBlur(() => {
+                if (!alive.current) return;
+                commit(false);
+              })
+            }
             onBlur={() =>
               lock.scheduleBlur(() => {
                 if (!alive.current) return;

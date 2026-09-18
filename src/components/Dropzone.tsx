@@ -110,6 +110,13 @@ export function Dropzone({
             placeholderTextColor={colors.faint}
             style={[styles.input, root ? styles.inputRoot : styles.inputNested]}
             onSubmitEditing={() => commit(draftRef.current.trim())}
+            onEndEditing={() => {
+              const name = draftRef.current.trim();
+              lock.scheduleBlur(() => {
+                if (!alive.current || picking.current) return;
+                commit(name);
+              });
+            }}
             onBlur={() => {
               const name = draftRef.current.trim();
               lock.scheduleBlur(() => {
