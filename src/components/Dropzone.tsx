@@ -192,6 +192,7 @@ const styles = StyleSheet.create({
     borderColor: colors.composer,
     backgroundColor: colors.card,
     zIndex: 6,
+    minHeight: Platform.OS === 'web' ? 16 : 32,
   },
   composer: {
     flex: 1,
