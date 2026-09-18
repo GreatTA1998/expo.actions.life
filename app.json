@@ -2,6 +2,7 @@
   "expo": {
     "name": "actions.life",
     "slug": "actions-life",
+    "owner": "eltonlin",
     "scheme": "actionslife",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -50,6 +51,9 @@
       ]
     ],
     "extra": {
+      "eas": {
+        "projectId": "0973b335-bc53-46ff-a722-84888f14469c"
+      },
       "firebaseProjectId": "project-y-2a061",
       "firestoreDatabaseId": "schema-compliant",
       "googleWebClientId": "132745397287-aakar5npr4orq496580pdgpvqeupf6j5.apps.googleusercontent.com",

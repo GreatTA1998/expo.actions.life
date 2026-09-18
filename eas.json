@@ -1,0 +1,22 @@
+{
+  "cli": {
+    "version": ">= 16.17.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleTeamId": "53R2C3HWTP",
+        "companyName": "Elton Lin",
+        "appName": "actions.life",
+        "sku": "life.actions.expo",
+        "language": "en-US"
+      }
+    }
+  }
+}
