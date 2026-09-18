@@ -44,7 +44,7 @@ export function SignInScreen({ onSession }: Props) {
     setNotice('');
     try {
       try {
-        const session = await signInWithGoogleNative(null);
+        const { session } = await signInWithGoogleNative(null);
         onSession(session);
         return;
       } catch (error) {
@@ -71,7 +71,7 @@ export function SignInScreen({ onSession }: Props) {
         );
         return;
       }
-      onSession(await finishGoogleAuthSession(token, null));
+      onSession((await finishGoogleAuthSession(token, null)).session);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setNotice(message);

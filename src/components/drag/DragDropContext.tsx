@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -488,7 +489,13 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   );
 
   const nativeHolding = () => Platform.OS !== 'web' && (pendingActivate.current || !!dragRef.current?.active);
-  const ghostLocal = drag?.active ? windowToLayer(drag.x, drag.y, layerOrigin.current) : null;
+
+  // Position is owned by setNativeProps only. Putting translate in React style
+  // lets zone-highlight / rAF setDrag re-renders snap the ghost back to a stale spot.
+  useLayoutEffect(() => {
+    const session = dragRef.current;
+    if (session?.active) paintGhost(session);
+  }, [bestId, drag?.active, drag?.id, drag?.name, drag?.width, drag?.height, paintGhost]);
 
   return (
     <DragContext.Provider value={value}>
@@ -515,19 +522,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
         }}
       >
         {children}
-        {drag?.active && ghostLocal ? (
+        {drag?.active ? (
           <View
             ref={ghostRef}
             testID="drag-ghost"
             pointerEvents="none"
-            style={[
-              styles.ghost,
-              {
-                width: drag.width,
-                height: drag.height,
-                transform: [{ translateX: ghostLocal.x }, { translateY: ghostLocal.y }],
-              },
-            ]}
+            style={[styles.ghost, { width: drag.width, height: drag.height }]}
           >
             <Text testID="drop-best" numberOfLines={1} style={styles.ghostMeta}>
               {bestId}
