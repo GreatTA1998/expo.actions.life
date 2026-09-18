@@ -139,7 +139,13 @@ export function DayCalendar({
     if (columnWidth < 40) return;
     if (centered.current) return;
     const x = todayIndex * columnWidth;
-    pairLinkedScroll('days', x);
+    dayOffset.current = { x, y: 0 };
+    pairingScroll.current = true;
+    dayScrollRef.current?.scrollTo({ x, animated: false });
+    headerScrollRef.current?.scrollTo({ x, animated: false });
+    requestAnimationFrame(() => {
+      pairingScroll.current = false;
+    });
     centered.current = true;
   }, [columnWidth, focusY, todayIndex]);
 

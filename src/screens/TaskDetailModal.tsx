@@ -67,6 +67,8 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
   }
 
   const live = store.task(task.id) ?? task;
+  const parent = live.parentID ? store.task(live.parentID) : undefined;
+  const parentWord = parent?.name.trim().split(/\s+/)[0];
 
   return (
     <Modal
@@ -106,6 +108,15 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
           {busy ? <ActivityIndicator color={colors.accent} /> : <View />}
         </View>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          {parent && parentWord ? (
+            <Pressable
+              testID="task-detail-parent"
+              onPress={() => onOpenTask(parent.id)}
+              style={styles.parentBadge}
+            >
+              <Text style={styles.parentBadgeText}>{parentWord}</Text>
+            </Pressable>
+          ) : null}
           <TextInput
             value={name}
             onChangeText={setName}
@@ -330,6 +341,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.ink,
     marginBottom: 16,
+  },
+  parentBadge: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  parentBadgeText: {
+    color: colors.accent,
+    fontSize: type.small,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',
