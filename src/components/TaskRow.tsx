@@ -40,6 +40,7 @@ export function TaskRow({
   const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
   const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
   const hasChildren = children.length > 0;
+  const doneCount = children.filter((child) => child.task.isDone).length;
   const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
   const datePast = isPastDate(task.startDateISO);
   const nestId = `nest-${task.id}`;
@@ -160,7 +161,7 @@ export function TaskRow({
             >
               <Text style={styles.chevron}>{task.isCollapsed ? '▸' : '▾'}</Text>
               <Text style={styles.count}>
-                {children.filter((child) => child.task.isDone).length}/{children.length}
+                {doneCount}/{children.length}
               </Text>
             </Pressable>
           ) : null}
