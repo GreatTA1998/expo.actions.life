@@ -82,3 +82,45 @@ test('dispose cancels a pending blur commit', async () => {
   await flush(COMPOSER_BLUR_MS + 10);
   assert.equal(ran, false);
 });
+
+test('empty blur after composer moved does not cancel the next slot', async () => {
+  const lock = createComposerLock();
+  const created: string[] = [];
+  let cancelled = false;
+  const composing = { current: true };
+  const submit = (name: string) => {
+    if (!lock.commit()) return;
+    if (name) created.push(name);
+    else if (composing.current) cancelled = true;
+  };
+
+  composing.current = false;
+  lock.scheduleBlur(() => submit(''));
+  await flush(COMPOSER_BLUR_MS + 5);
+  assert.equal(cancelled, false);
+  assert.deepEqual(created, []);
+
+  lock.beginCompose();
+  composing.current = true;
+  submit('Keep me');
+  assert.deepEqual(created, ['Keep me']);
+  lock.dispose();
+});
+
+test('blur uses the name captured before draft is cleared', async () => {
+  const lock = createComposerLock();
+  const created: string[] = [];
+  const composing = { current: true };
+  const submit = (name: string) => {
+    if (!lock.commit()) return;
+    if (name) created.push(name);
+    else if (composing.current) created.push('CANCEL');
+  };
+
+  const snapped = 'Typed';
+  composing.current = false;
+  lock.scheduleBlur(() => submit(snapped));
+  await flush(COMPOSER_BLUR_MS + 5);
+  assert.deepEqual(created, ['Typed']);
+  lock.dispose();
+});

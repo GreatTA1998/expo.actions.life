@@ -34,8 +34,10 @@ export function Dropzone({
   const alive = useRef(true);
   const lock = useRef(createComposerLock()).current;
   const draftRef = useRef('');
+  const composingRef = useRef(composing);
   const wasComposing = useRef(composing);
   const [draft, setDraft] = useState('');
+  composingRef.current = composing;
   const root = depth === 0;
   const highlighted = bestId === zoneId;
   const templates = matchHabitTemplates(draft);
@@ -62,9 +64,11 @@ export function Dropzone({
   }, [index, parentID, registerZone, zoneId]);
 
   useEffect(() => {
-    if (composing && !wasComposing.current) lock.beginCompose();
+    if (composing && !wasComposing.current) {
+      lock.beginCompose();
+      setDraftValue('');
+    }
     wasComposing.current = composing;
-    if (!composing) setDraftValue('');
   }, [composing, lock]);
 
   function commit(name: string, extras?: CreateExtras) {
@@ -73,7 +77,7 @@ export function Dropzone({
     if (name) {
       onSubmit(name, extras);
       setDraftValue('');
-    } else {
+    } else if (composingRef.current) {
       onCancel();
     }
   }
@@ -104,9 +108,10 @@ export function Dropzone({
             style={[styles.input, root ? styles.inputRoot : styles.inputNested]}
             onSubmitEditing={() => commit(draftRef.current.trim())}
             onBlur={() => {
+              const name = draftRef.current.trim();
               lock.scheduleBlur(() => {
                 if (!alive.current || picking.current) return;
-                commit(draftRef.current.trim());
+                commit(name);
               });
             }}
             returnKeyType="done"
