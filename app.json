@@ -18,7 +18,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "life.actions.expo",
       "usesAppleSignIn": true,
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "life.actions.expo",
