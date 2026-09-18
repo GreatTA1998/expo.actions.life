@@ -39,10 +39,10 @@ test('scroll side-effect scheduler coalesces to one run per frame', async () => 
   globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
   try {
     const seen: number[] = [];
-    const sched = createScrollSideEffectScheduler((x) => seen.push(x));
-    sched.schedule(1);
-    sched.schedule(2);
-    sched.schedule(3);
+    const sched = createScrollSideEffectScheduler();
+    sched.schedule(1, (x) => seen.push(x));
+    sched.schedule(2, (x) => seen.push(x));
+    sched.schedule(3, (x) => seen.push(x));
     assert.equal(queued.length, 1);
     queued[0](0);
     assert.deepEqual(seen, [3]);

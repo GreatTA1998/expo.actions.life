@@ -92,12 +92,7 @@ export function DayCalendar({
   const leftSpacer = windowStart * columnWidth;
   const rightSpacer = Math.max(0, CAL_TOTAL_COLUMNS - 1 - windowEnd) * columnWidth;
   const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
-  const syncDayScrollRef = useRef<(x: number) => void>(() => {});
-  const windowSync = useRef(
-    createScrollSideEffectScheduler((x) => {
-      syncDayScrollRef.current(x);
-    }),
-  ).current;
+  const windowSync = useRef(createScrollSideEffectScheduler()).current;
 
   useEffect(() => () => windowSync.dispose(), [windowSync]);
 
@@ -110,11 +105,33 @@ export function DayCalendar({
     });
   }
 
+  function syncDayScroll(x: number) {
+    const width = Math.max(columnWidth, 1);
+    const viewW = dayViewport.current?.width || width;
+    const left = Math.max(0, Math.min(CAL_TOTAL_COLUMNS - 1, Math.floor(x / width)));
+    const right = Math.max(left, Math.min(CAL_TOTAL_COLUMNS - 1, Math.ceil((x + viewW) / width) - 1));
+    const iso = calendarStripISO(todayISO, left);
+    if (iso !== centerISO) setCenterISO(iso);
+    if (calendarShouldRecenter(left, right, windowStart, windowEnd)) {
+      let next = calendarMountedWindow(left, right);
+      if (composer) {
+        const idx = calendarStripIndex(todayISO, composer.iso);
+        if (idx >= 0 && idx < CAL_TOTAL_COLUMNS) {
+          next = { start: Math.min(next.start, idx), end: Math.max(next.end, idx) };
+        }
+      }
+      if (next.start !== windowStart || next.end !== windowEnd) {
+        setWindowStart(next.start);
+        setWindowEnd(next.end);
+      }
+    }
+  }
+
   /** Sticky chrome only — React window remount is coalesced; zones only while dragging. */
   function handleOffset(next: ScrollOffset) {
     offsetRef.current = next;
     applyStickyTransforms(next);
-    windowSync.schedule(next.x);
+    windowSync.schedule(next.x, syncDayScroll);
     refreshZones();
   }
 
@@ -160,29 +177,6 @@ export function DayCalendar({
     applyStickyTransforms(next);
     centered.current = true;
   }, [columnWidth, focusY, todayIndex]);
-
-  function syncDayScroll(x: number) {
-    const width = Math.max(columnWidth, 1);
-    const viewW = dayViewport.current?.width || width;
-    const left = Math.max(0, Math.min(CAL_TOTAL_COLUMNS - 1, Math.floor(x / width)));
-    const right = Math.max(left, Math.min(CAL_TOTAL_COLUMNS - 1, Math.ceil((x + viewW) / width) - 1));
-    const iso = calendarStripISO(todayISO, left);
-    if (iso !== centerISO) setCenterISO(iso);
-    if (calendarShouldRecenter(left, right, windowStart, windowEnd)) {
-      let next = calendarMountedWindow(left, right);
-      if (composer) {
-        const idx = calendarStripIndex(todayISO, composer.iso);
-        if (idx >= 0 && idx < CAL_TOTAL_COLUMNS) {
-          next = { start: Math.min(next.start, idx), end: Math.max(next.end, idx) };
-        }
-      }
-      if (next.start !== windowStart || next.end !== windowEnd) {
-        setWindowStart(next.start);
-        setWindowEnd(next.end);
-      }
-    }
-  }
-  syncDayScrollRef.current = syncDayScroll;
 
   function onCreateKeepOpen(iso: string, time: string, name: string, keepOpen: boolean) {
     onCreateAt(iso, time, name);

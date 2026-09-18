@@ -90,15 +90,7 @@ export function TaskRow({
         style={[styles.row, { paddingLeft: 12 + depth * 18 }, highlighted && styles.nestHot]}
       >
         <View style={styles.titleRow}>
-          {hasChildren ? (
-            <Pressable onPress={() => onToggleCollapsed(task.id)} hitSlop={8} style={styles.chevronHit}>
-              <Text style={styles.chevron}>
-                {task.isCollapsed ? '▸' : '▾'} {children.filter((child) => child.task.isDone).length}/{children.length}
-              </Text>
-            </Pressable>
-          ) : (
-            <View style={styles.chevronHit} />
-          )}
+          {/* Match web RecursiveTask: checkbox → title → collapse → count → menu */}
           <Pressable
             onPress={() => onToggleDone(task.id)}
             style={[styles.box, task.isDone && styles.boxDone]}
@@ -159,6 +151,20 @@ export function TaskRow({
               ) : null}
             </View>
           </Pressable>
+          {hasChildren ? (
+            <Pressable
+              onPress={() => onToggleCollapsed(task.id)}
+              hitSlop={8}
+              style={styles.chevronHit}
+              testID={`task-collapse-${task.id}`}
+            >
+              <Text style={styles.chevron}>{task.isCollapsed ? '▸' : '▾'}</Text>
+              <Text style={styles.count}>
+                {children.filter((child) => child.task.isDone).length}/{children.length}
+              </Text>
+            </Pressable>
+          ) : null}
+          <View style={styles.trailingSpacer} />
           <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit} testID={`task-menu-${task.id}`}>
             <Text style={styles.menu}>⋯</Text>
           </Pressable>
@@ -241,13 +247,23 @@ const styles = StyleSheet.create({
     borderColor: colors.dropBorder,
   },
   chevronHit: {
-    minWidth: 22,
-    paddingRight: 4,
+    flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
+    paddingLeft: 2,
   },
   chevron: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: 16,
+    lineHeight: 18,
+    width: 16,
+    textAlign: 'center',
+  },
+  count: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '400',
+    marginLeft: 1,
   },
   box: {
     width: 20,
@@ -257,8 +273,9 @@ const styles = StyleSheet.create({
     borderColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 8,
     backgroundColor: colors.card,
+    flexShrink: 0,
   },
   boxDone: {
     backgroundColor: colors.ink,
@@ -270,16 +287,17 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   body: {
-    flex: 1,
+    flexShrink: 1,
+    minWidth: 8,
     justifyContent: 'center',
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   name: {
-    flex: 1,
+    flexShrink: 1,
     color: colors.ink,
   },
   nameRoot: {
@@ -297,13 +315,18 @@ const styles = StyleSheet.create({
   calGlyph: {
     color: colors.accent,
     fontSize: 11,
+    flexShrink: 0,
   },
   calGlyphOverdue: {
     color: colors.danger,
   },
+  trailingSpacer: {
+    flex: 1,
+    minWidth: 4,
+  },
   notesHit: {
     // Match web RecursiveTask: notes sit under the title, indented past the checkbox.
-    marginLeft: 52,
+    marginLeft: 28,
     marginTop: 2,
     paddingRight: 28,
   },
