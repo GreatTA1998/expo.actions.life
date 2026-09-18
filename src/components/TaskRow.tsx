@@ -35,6 +35,7 @@ export function TaskRow({
   const { task, children } = node;
   const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
   const rowRef = useRef<View>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasChildren = children.length > 0;
   const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
   const datePast = isPastDate(task.startDateISO);
@@ -49,6 +50,18 @@ export function TaskRow({
       ownerTaskId: task.id,
     });
   }, [nestId, registerZone, task.id]);
+
+  useEffect(() => {
+    return () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    };
+  }, []);
+
+  function clearHold() {
+    if (!holdTimer.current) return;
+    clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  }
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
     const token = activate ? activateDrag() : undefined;
@@ -102,13 +115,25 @@ export function TaskRow({
         <Pressable
           onPress={() => onOpen(task.id)}
           onLongPress={(event) => {
+            clearHold();
             startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY, true);
           }}
           delayLongPress={HOLD_DELAY}
           onPressIn={(event) => {
+            const pageX = event.nativeEvent.pageX;
+            const pageY = event.nativeEvent.pageY;
             if (Platform.OS === 'web') {
-              startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY);
+              startPointerDrag(pageX, pageY);
+              return;
             }
+            clearHold();
+            holdTimer.current = setTimeout(() => {
+              holdTimer.current = null;
+              startPointerDrag(pageX, pageY, true);
+            }, HOLD_DELAY);
+          }}
+          onPressOut={() => {
+            if (Platform.OS !== 'web') clearHold();
           }}
           {...(Platform.OS === 'web'
             ? ({
@@ -185,6 +210,12 @@ export function TaskRow({
             onCompose={() => onCompose({ parentID: task.id, index: children.length })}
             onSubmit={(name, extras) => onCreate({ parentID: task.id, index: children.length }, name, extras)}
             onCancel={() => onCompose(null)}
+          />
+          <Pressable
+            testID={`empty-padding-${task.id}`}
+            accessibilityLabel="Add a subtask here"
+            onPress={() => onCompose({ parentID: task.id, index: children.length })}
+            style={styles.nestedEmpty}
           />
         </View>
       ) : null}
@@ -306,5 +337,8 @@ const styles = StyleSheet.create({
   },
   nested: {
     position: 'relative',
+  },
+  nestedEmpty: {
+    minHeight: 28,
   },
 });

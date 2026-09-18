@@ -41,6 +41,9 @@ export function Inbox({
         offset.current = next;
         scrollRef.current?.scrollTo({ y: next.y, animated: false });
       },
+      setEnabled: (enabled) => {
+        scrollRef.current?.setNativeProps({ scrollEnabled: enabled });
+      },
     });
   }, [registerScroller]);
 
@@ -56,6 +59,7 @@ export function Inbox({
         ref={scrollRef}
         contentContainerStyle={styles.content}
         scrollEnabled={!drag && !pointerLocked}
+        canCancelContentTouches={!pointerLocked}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         onScroll={(event) => {

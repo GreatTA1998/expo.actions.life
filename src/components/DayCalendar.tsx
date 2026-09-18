@@ -98,25 +98,32 @@ export function DayCalendar({
       axis: 'y',
       getViewport: () => hourViewport.current,
       getOffset: () => hourOffset.current,
-      scrollTo: (next) => {
-        hourOffset.current = next;
-        hourScrollRef.current?.scrollTo({ y: next.y, animated: false });
-      },
+        scrollTo: (next) => {
+          hourOffset.current = next;
+          hourScrollRef.current?.scrollTo({ y: next.y, animated: false });
+        },
+        setEnabled: (enabled) => {
+          hourScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
+        },
     });
     const unDays = registerScroller({
       id: 'cal-days',
       axis: 'x',
       getViewport: () => dayViewport.current,
       getOffset: () => dayOffset.current,
-      scrollTo: (next) => {
-        dayOffset.current = next;
-        pairingScroll.current = true;
-        dayScrollRef.current?.scrollTo({ x: next.x, animated: false });
-        headerScrollRef.current?.scrollTo({ x: next.x, animated: false });
-        requestAnimationFrame(() => {
-          pairingScroll.current = false;
-        });
-      },
+        scrollTo: (next) => {
+          dayOffset.current = next;
+          pairingScroll.current = true;
+          dayScrollRef.current?.scrollTo({ x: next.x, animated: false });
+          headerScrollRef.current?.scrollTo({ x: next.x, animated: false });
+          requestAnimationFrame(() => {
+            pairingScroll.current = false;
+          });
+        },
+        setEnabled: (enabled) => {
+          dayScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
+          headerScrollRef.current?.setNativeProps({ scrollEnabled: enabled });
+        },
     });
     return () => {
       unHour();
@@ -237,6 +244,7 @@ export function DayCalendar({
           ref={headerScrollRef}
           horizontal
           scrollEnabled={!drag && !pointerLocked}
+          canCancelContentTouches={!pointerLocked}
           showsHorizontalScrollIndicator={false}
           style={styles.headerScroll}
           onScrollBeginDrag={() => beginLinkedScroll('header')}
@@ -287,6 +295,7 @@ export function DayCalendar({
         ref={hourScrollRef}
         style={styles.fill}
         scrollEnabled={!drag && !pointerLocked}
+        canCancelContentTouches={!pointerLocked}
         contentOffset={{ x: 0, y: focusY }}
         onScroll={(event) => {
           hourOffset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
@@ -315,6 +324,7 @@ export function DayCalendar({
             horizontal
             nestedScrollEnabled
             scrollEnabled={!drag && !pointerLocked}
+            canCancelContentTouches={!pointerLocked}
             showsHorizontalScrollIndicator={false}
             onScrollBeginDrag={() => beginLinkedScroll('days')}
             onScrollEndDrag={(event) => {
@@ -742,6 +752,7 @@ function CalBlock({
   const height = Math.max(28, (duration / 60) * pixelsPerHour);
   const highlighted = bestId === nestId;
   const didResize = useRef(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return registerZone({
@@ -751,6 +762,18 @@ function CalBlock({
       ownerTaskId: task.id,
     });
   }, [nestId, registerZone, task.id]);
+
+  useEffect(() => {
+    return () => {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+    };
+  }, []);
+
+  function clearHold() {
+    if (!holdTimer.current) return;
+    clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  }
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
     const token = activate ? activateDrag() : undefined;
@@ -780,13 +803,25 @@ function CalBlock({
           onOpenTask(task.id);
         }}
         onLongPress={(event) => {
+          clearHold();
           startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY, true);
         }}
         delayLongPress={HOLD_DELAY}
         onPressIn={(event) => {
+          const pageX = event.nativeEvent.pageX;
+          const pageY = event.nativeEvent.pageY;
           if (Platform.OS === 'web') {
-            startPointerDrag(event.nativeEvent.pageX, event.nativeEvent.pageY);
+            startPointerDrag(pageX, pageY);
+            return;
           }
+          clearHold();
+          holdTimer.current = setTimeout(() => {
+            holdTimer.current = null;
+            startPointerDrag(pageX, pageY, true);
+          }, HOLD_DELAY);
+        }}
+        onPressOut={() => {
+          if (Platform.OS !== 'web') clearHold();
         }}
         style={[styles.block, highlighted && styles.blockHot]}
       >

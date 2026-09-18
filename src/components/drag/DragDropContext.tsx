@@ -53,6 +53,7 @@ export type Scroller = {
   getViewport: () => Rect | null;
   getOffset: () => { x: number; y: number };
   scrollTo: (next: { x: number; y: number }) => void;
+  setEnabled?: (enabled: boolean) => void;
 };
 
 type DragContextValue = {
@@ -168,6 +169,12 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     }
   }, []);
 
+  const lockScrollers = useCallback((enabled: boolean) => {
+    for (const scroller of scrollers.current.values()) {
+      scroller.setEnabled?.(enabled);
+    }
+  }, []);
+
   const armDrag = useCallback(
     (task: TaskRecord, origin: DragOrigin, pageX: number, pageY: number, rect: Rect, token?: number) => {
       if (token != null && !gesture.live(token)) return;
@@ -190,12 +197,13 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       dragRef.current = session;
       setDrag(session);
       if (session.active) {
+        lockScrollers(false);
         setPointerLocked(true);
         refreshZones();
         pickZone(session);
       }
     },
-    [gesture, pickZone, refreshZones],
+    [gesture, lockScrollers, pickZone, refreshZones],
   );
 
   const activateDrag = useCallback(
@@ -205,6 +213,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       }
       if (!gesture.live(token)) return token;
       pendingActivate.current = true;
+      lockScrollers(false);
       setPointerLocked(true);
       const session = dragRef.current;
       if (!session) return token;
@@ -216,7 +225,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       pickZone(next);
       return token;
     },
-    [gesture, pickZone, refreshZones],
+    [gesture, lockScrollers, pickZone, refreshZones],
   );
 
   const moveDrag = useCallback(
@@ -229,6 +238,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
           if (Platform.OS === 'web' || pendingActivate.current) activateDrag();
           else {
             pendingActivate.current = false;
+            lockScrollers(true);
             setPointerLocked(false);
             dragRef.current = null;
             setDrag(null);
@@ -252,7 +262,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       setDrag(next);
       pickZone(next);
     },
-    [activateDrag, pickZone],
+    [activateDrag, lockScrollers, pickZone],
   );
 
   const cancelDrag = useCallback(() => {
@@ -260,10 +270,11 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
     dragRef.current = null;
     bestRef.current = '';
     pendingActivate.current = false;
+    lockScrollers(true);
     setPointerLocked(false);
     setDrag(null);
     setBestId('');
-  }, [gesture]);
+  }, [gesture, lockScrollers]);
 
   const endDrag = useCallback(() => {
     const session = dragRef.current;
