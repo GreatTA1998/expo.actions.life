@@ -7,6 +7,8 @@ import {
   applyDeletion,
   applyReparent,
   buildForest,
+  childrenForest,
+  computeOrderValue,
   inboxForest,
   previousSibling,
 } from '../tree/treeMaintenance';
@@ -119,4 +121,20 @@ test('adjacentSibling walks nested children for reorder', () => {
   assert.equal(adjacentSibling('b', forest, 1), null);
   assert.equal(adjacentSibling('a1', forest, 1)?.id, 'a2');
   assert.equal(adjacentSibling('a2', forest, -1)?.id, 'a1');
+});
+
+test('childrenForest includes calendar-only nested todos', () => {
+  const kids = childrenForest('photo-bird', [
+    snap('photo-bird', { parent: '', onList: false, name: 'Bird-watching with family' }),
+    snap('nested', { parent: 'photo-bird', onList: true, name: 'Bring binoculars' }),
+    snap('other', { parent: '', onList: true, name: 'TO-DO' }),
+  ]);
+  assert.deepEqual(kids.map((node) => node.task.name), ['Bring binoculars']);
+});
+
+test('computeOrderValue matches web dropzone placement', () => {
+  assert.equal(computeOrderValue(0, []), 1);
+  assert.equal(computeOrderValue(0, [{ orderValue: 11 }]), 10);
+  assert.equal(computeOrderValue(1, [{ orderValue: 11 }]), 12);
+  assert.equal(computeOrderValue(1, [{ orderValue: 10 }, { orderValue: 20 }]), 15);
 });

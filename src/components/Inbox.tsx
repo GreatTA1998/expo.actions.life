@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
-import { TaskRow } from './TaskRow';
+import { Dropzone } from './Dropzone';
+import { useDragDrop, type Rect } from './drag/DragDropContext';
+import { measureNode } from './drag/geometry';
+import { TaskRow, type ComposerSlot } from './TaskRow';
 
 type Props = {
   forest: TaskTree[];
@@ -10,9 +13,7 @@ type Props = {
   onToggleCollapsed: (id: string) => void;
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
-  onDragStart?: (task: TaskRecord) => void;
-  /** Bump after creating a root task so the new row is not left under the composer. */
-  revealTopToken?: number;
+  onCreate: (slot: { parentID: string; index: number }, name: string, extras?: { duration?: number }) => void;
 };
 
 export function Inbox({
@@ -21,41 +22,109 @@ export function Inbox({
   onToggleCollapsed,
   onOpen,
   onMenu,
-  onDragStart,
-  revealTopToken,
+  onCreate,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const wrapRef = useRef<View>(null);
+  const offset = useRef({ x: 0, y: 0 });
+  const viewport = useRef<Rect | null>(null);
+  const [composer, setComposer] = useState<ComposerSlot>(null);
+  const { registerScroller, refreshZones, drag, pointerLocked, scrollLocked } = useDragDrop();
+  const scrollEnabled = !drag?.active && !pointerLocked && !scrollLocked;
 
   useEffect(() => {
-    if (!revealTopToken) return;
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [revealTopToken]);
+    return registerScroller({
+      id: 'inbox',
+      axis: 'y',
+      getViewport: () => viewport.current,
+      getOffset: () => offset.current,
+      scrollTo: (next) => {
+        offset.current = next;
+        scrollRef.current?.scrollTo({ y: next.y, animated: false });
+      },
+      setEnabled: (enabled) => {
+        scrollRef.current?.setNativeProps({ scrollEnabled: enabled });
+      },
+    });
+  }, [registerScroller]);
+
+  function measureViewport() {
+    measureNode(wrapRef.current, (rect) => {
+      viewport.current = rect;
+    });
+  }
 
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.heading}>Inbox</Text>
+    <View ref={wrapRef} style={styles.wrap} testID="inbox" onLayout={measureViewport}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
+        scrollEnabled={scrollEnabled}
+        canCancelContentTouches={!pointerLocked && !scrollLocked}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onScroll={(event) => {
+          offset.current = { x: 0, y: event.nativeEvent.contentOffset.y };
+          refreshZones();
+        }}
+        scrollEventThrottle={16}
       >
-        {forest.length === 0 ? (
-          <Text style={styles.empty}>Nothing on the list. Add a task below.</Text>
-        ) : (
-          forest.map((node) => (
+        {forest.map((node, i) => (
+          <View key={node.task.id}>
+            <Dropzone
+              key={`list-root-${node.task.id}-before`}
+              zoneId={`list-root-${i}`}
+              parentID=""
+              index={i}
+              depth={0}
+              composing={composer?.parentID === '' && composer.index === i}
+              onCompose={() => setComposer({ parentID: '', index: i })}
+              onSubmit={(name, extras) => {
+                onCreate({ parentID: '', index: i }, name, extras);
+                setComposer({ parentID: '', index: i + 1 });
+              }}
+              onCancel={() => setComposer(null)}
+            />
             <TaskRow
-              key={node.task.id}
               node={node}
               depth={0}
+              composer={composer}
+              onCompose={setComposer}
+              onCreate={(slot, name, extras) => {
+                onCreate(slot, name, extras);
+                setComposer({ parentID: slot.parentID, index: slot.index + 1 });
+              }}
               onToggleDone={onToggleDone}
               onToggleCollapsed={onToggleCollapsed}
               onOpen={onOpen}
               onMenu={onMenu}
-              onDragStart={onDragStart}
             />
-          ))
-        )}
+          </View>
+        ))}
+        <Dropzone
+          key={`list-root-end-${forest.length}`}
+          zoneId={`list-root-${forest.length}`}
+          parentID=""
+          index={forest.length}
+          depth={0}
+          composing={composer?.parentID === '' && composer.index === forest.length}
+          onCompose={() => setComposer({ parentID: '', index: forest.length })}
+          onSubmit={(name, extras) => {
+            const at = forest.length;
+            onCreate({ parentID: '', index: at }, name, extras);
+            setComposer({ parentID: '', index: at + 1 });
+          }}
+          onCancel={() => setComposer(null)}
+        />
+        <Pressable
+          testID="inbox-empty-padding"
+          onPress={() => setComposer({ parentID: '', index: forest.length })}
+          style={styles.emptyHit}
+        >
+          {forest.length === 0 && !composer ? (
+            <Text style={styles.empty}>Tap the empty space to add a task</Text>
+          ) : null}
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -66,21 +135,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.listBg,
   },
-  heading: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
-    color: colors.muted,
-    fontSize: type.small,
-    fontWeight: '600',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
   content: {
-    paddingBottom: 72,
+    paddingBottom: 48,
+    flexGrow: 1,
+  },
+  emptyHit: {
+    flexGrow: 1,
+    minHeight: 48,
+    padding: 16,
   },
   empty: {
-    padding: 16,
     color: colors.muted,
     fontSize: type.small,
   },

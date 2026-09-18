@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Modal, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { TabBar, type AppTab } from '../components/TabBar';
 import { useAppInsets } from '../safeArea';
@@ -11,7 +11,7 @@ import {
 } from '../services/authSession';
 import type { TaskTreeStore } from '../services/taskStore';
 import { colors, type } from '../theme';
-import { HomeScreen, type HomeScreenHandle } from './HomeScreen';
+import { HomeScreen } from './HomeScreen';
 import { PhotosScreen } from './PhotosScreen';
 import { RoutinesScreen } from './RoutinesScreen';
 import { ScheduleScreen } from './ScheduleScreen';
@@ -30,8 +30,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   const [tab, setTab] = useState<AppTab>('calendar');
   const [openId, setOpenId] = useState<string | null>(null);
   const [menuTask, setMenuTask] = useState<TaskRecord | null>(null);
-  const [dragging, setDragging] = useState<TaskRecord | null>(null);
-  const homeRef = useRef<HomeScreenHandle>(null);
   const [request, , promptAsync] = useGoogleAuthRequest();
   const openTask = openId ? store.task(openId) : undefined;
   const undo = store.lastUndo;
@@ -39,8 +37,12 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   async function linkGoogle() {
     try {
       try {
-        onSession(await signInWithGoogleNative(session));
-        void store.syncNow();
+        const { session: next, outcome } = await signInWithGoogleNative(session);
+        onSession(next);
+        // linkWithCredential keeps the same uid — drain the guest outbox now that
+        // Auth is a real Google user. signed-in (existing account) must not sync
+        // this guest store; App boots the Google uid and pulls there.
+        if (outcome === 'linked') void store.syncNow();
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -54,8 +56,9 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
           ? result.params.id_token
           : result.authentication?.idToken;
       if (!idToken) throw new Error('Google returned no ID token.');
-      onSession(await finishGoogleAuthSession(idToken, session));
-      void store.syncNow();
+      const { session: next, outcome } = await finishGoogleAuthSession(idToken, session);
+      onSession(next);
+      if (outcome === 'linked') void store.syncNow();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setTab('settings');
@@ -64,7 +67,7 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
   }
 
   return (
-    <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.safe, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.brand}>actions.life</Text>
@@ -75,17 +78,9 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
         </Pressable>
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, { paddingBottom: insets.bottom }]}>
         {tab === 'calendar' ? (
-          <HomeScreen
-            ref={homeRef}
-            store={store}
-            dragging={dragging}
-            onDragStart={setDragging}
-            onDragEnd={() => setDragging(null)}
-            onOpen={setOpenId}
-            onMenu={setMenuTask}
-          />
+          <HomeScreen store={store} onOpen={setOpenId} onMenu={setMenuTask} />
         ) : null}
         {tab === 'schedule' ? <ScheduleScreen store={store} onOpenTask={setOpenId} /> : null}
         {tab === 'routines' ? <RoutinesScreen store={store} /> : null}
@@ -98,30 +93,20 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
             onLinkGoogle={() => void linkGoogle()}
           />
         ) : null}
+
+        {undo ? (
+          <Pressable
+            style={styles.undo}
+            onPress={() => {
+              void undo.run().then(() => store.clearUndo());
+            }}
+          >
+            <Text style={styles.undoText}>{undo.label} — Undo</Text>
+          </Pressable>
+        ) : null}
+
+        <TabBar tab={tab} onChange={setTab} />
       </View>
-
-      {dragging && tab === 'calendar' ? (
-        <Pressable
-          style={styles.dragCatch}
-          onPress={(event) => {
-            homeRef.current?.dropAt(event.nativeEvent.pageX, event.nativeEvent.pageY, dragging);
-            setDragging(null);
-          }}
-        />
-      ) : null}
-
-      {undo ? (
-        <Pressable
-          style={styles.undo}
-          onPress={() => {
-            void undo.run().then(() => store.clearUndo());
-          }}
-        >
-          <Text style={styles.undoText}>{undo.label} — Undo</Text>
-        </Pressable>
-      ) : null}
-
-      <TabBar tab={tab} onChange={setTab} />
 
       {openTask ? (
         <TaskDetailModal
@@ -213,14 +198,6 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
                   }
                 />
                 <Action
-                  label="Drag to calendar"
-                  onPress={() => {
-                    setDragging(menuTask);
-                    setMenuTask(null);
-                    setTab('calendar');
-                  }}
-                />
-                <Action
                   label={menuTask.onList ? 'Archive' : 'Unarchive'}
                   onPress={() =>
                     void (menuTask.onList ? store.archive(menuTask.id) : store.unarchive(menuTask.id)).then(() =>
@@ -258,14 +235,6 @@ const styles = StyleSheet.create({
   sub: { color: colors.muted, fontSize: type.micro, marginTop: 2 },
   link: { color: colors.accent, fontWeight: '600' },
   body: { flex: 1 },
-  dragCatch: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 20,
-  },
   undo: {
     marginHorizontal: 12,
     marginBottom: 8,

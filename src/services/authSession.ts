@@ -15,6 +15,14 @@ import {
 
 WebBrowser.maybeCompleteAuthSession();
 
+/** `linked` keeps the same uid (drain outbox). `signed-in` switches accounts (do not sync guest). */
+export type GoogleAuthOutcome = 'linked' | 'signed-in';
+
+export type GoogleAuthResult = {
+  session: PersistedSession;
+  outcome: GoogleAuthOutcome;
+};
+
 export function useGoogleAuthRequest() {
   const iosClientId = googleAuthConfig.iosClientId || googleAuthConfig.webClientId || undefined;
   const androidClientId =
@@ -49,7 +57,10 @@ async function idTokenFromNativeGoogle(): Promise<string> {
   return idToken;
 }
 
-async function applyGoogleIdToken(idToken: string, current: PersistedSession | null): Promise<PersistedSession> {
+async function applyGoogleIdToken(
+  idToken: string,
+  current: PersistedSession | null,
+): Promise<GoogleAuthResult> {
   const firebase = await tryFirebase();
   if (!firebase) {
     throw new Error(
@@ -68,7 +79,8 @@ async function applyGoogleIdToken(idToken: string, current: PersistedSession | n
         provider: 'google',
       };
       await saveSession(session);
-      return session;
+      // Same Firebase uid — guest inbox stays; caller must drain the outbox.
+      return { session, outcome: 'linked' };
     }
   } catch (error) {
     const code = (error as { code?: string }).code;
@@ -84,7 +96,8 @@ async function applyGoogleIdToken(idToken: string, current: PersistedSession | n
     provider: 'google',
   };
   await saveSession(session);
-  return session;
+  // Different account (or cold sign-in). Do not sync the outgoing guest store.
+  return { session, outcome: 'signed-in' };
 }
 
 export async function restoreSession(): Promise<PersistedSession | null> {
@@ -113,7 +126,7 @@ export async function continueAsGuest(): Promise<PersistedSession> {
   return session;
 }
 
-export async function signInWithGoogleNative(current: PersistedSession | null): Promise<PersistedSession> {
+export async function signInWithGoogleNative(current: PersistedSession | null): Promise<GoogleAuthResult> {
   if (!nativeGoogleAvailable()) {
     throw new Error('NATIVE_GOOGLE_UNAVAILABLE');
   }
@@ -124,7 +137,7 @@ export async function signInWithGoogleNative(current: PersistedSession | null): 
 export async function finishGoogleAuthSession(
   idToken: string,
   current: PersistedSession | null,
-): Promise<PersistedSession> {
+): Promise<GoogleAuthResult> {
   return applyGoogleIdToken(idToken, current);
 }
 

@@ -67,22 +67,30 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
   }
 
   const live = store.task(task.id) ?? task;
+  const parent = live.parentID ? store.task(live.parentID) : undefined;
+  const parentWord = parent?.name.trim().split(/\s+/)[0];
+
+  async function persistEdits() {
+    const nextName = name.trim() || 'Untitled';
+    if (nextName !== live.name) await store.rename(live.id, nextName);
+    if (notes !== live.notes) await store.setNotes(live.id, notes);
+  }
+
+  function openRelated(id: string) {
+    void persistEdits().then(() => onOpenTask(id));
+  }
 
   return (
     <Modal
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={() => {
-        void (async () => {
-          const nextName = name.trim() || 'Untitled';
-          if (nextName !== live.name) await store.rename(live.id, nextName);
-          if (notes !== live.notes) await store.setNotes(live.id, notes);
-          onClose();
-        })();
+        void persistEdits().then(onClose);
       }}
     >
       <KeyboardAvoidingView
         style={styles.sheet}
+        testID="task-detail"
         behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}
       >
         <View style={styles.grab}>
@@ -91,20 +99,24 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
         <View style={styles.topBar}>
           <Pressable
             onPress={() => {
-              void (async () => {
-                const nextName = name.trim() || 'Untitled';
-                if (nextName !== live.name) await store.rename(live.id, nextName);
-                if (notes !== live.notes) await store.setNotes(live.id, notes);
-                onClose();
-              })();
+              void persistEdits().then(onClose);
             }}
             hitSlop={8}
           >
-            <Text style={styles.link}>Close</Text>
+            <Text style={styles.link} testID="task-detail-close">Close</Text>
           </Pressable>
           {busy ? <ActivityIndicator color={colors.accent} /> : <View />}
         </View>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          {parent && parentWord ? (
+            <Pressable
+              testID="task-detail-parent"
+              onPress={() => openRelated(parent.id)}
+              style={styles.parentBadge}
+            >
+              <Text style={styles.parentBadgeText}>{parentWord}</Text>
+            </Pressable>
+          ) : null}
           <TextInput
             value={name}
             onChangeText={setName}
@@ -226,7 +238,7 @@ export function TaskDetailModal({ task, store, onClose, onOpenTask }: Props) {
 
           <Text style={styles.section}>Subtasks</Text>
           {children.map((child) => (
-            <Pressable key={child.id} onPress={() => onOpenTask(child.id)} style={styles.child}>
+            <Pressable key={child.id} onPress={() => openRelated(child.id)} style={styles.child}>
               <Text style={[styles.childName, child.isDone && styles.done]}>{child.name}</Text>
             </Pressable>
           ))}
@@ -329,6 +341,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.ink,
     marginBottom: 16,
+  },
+  parentBadge: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  parentBadgeText: {
+    color: colors.accent,
+    fontSize: type.small,
+    fontWeight: '600',
   },
   row: {
     flexDirection: 'row',

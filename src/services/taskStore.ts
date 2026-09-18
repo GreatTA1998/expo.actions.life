@@ -7,7 +7,10 @@ import {
   applyDeletion,
   adjacentSibling,
   applyReparent,
+  computeOrderValue,
+  childrenForest,
   inboxForest,
+  listSiblings,
   nextOrderValue,
   parentIDOf,
   previousSibling,
@@ -15,6 +18,7 @@ import {
 } from '../tree/treeMaintenance';
 import { peekFirebase } from './firebase';
 import { insertGuestSeed } from './seed';
+import { isLocalOnlyUid } from './syncMerge';
 import { SyncEngine } from './syncEngine';
 
 export type CreateTaskInput = {
@@ -27,12 +31,21 @@ export type CreateTaskInput = {
   notes?: string;
   id?: string;
   childrenLayout?: string;
+  photoLayout?: string;
   isDone?: boolean;
+  isCollapsed?: boolean;
   imageDownloadURL?: string;
+  imageFullPath?: string;
   iconURL?: string;
+  templateID?: string;
+  timeZone?: string;
   tagIDs?: string[];
   /** Root inbox rows go above the fold when set to `start`. */
   place?: 'start' | 'end';
+  /** Explicit sibling rank (web dropzone / popover input). */
+  orderValue?: number;
+  /** Insert among current siblings at this index (0 = first). */
+  index?: number;
 };
 
 export function mergeTaskRecords(disk: TaskRecord[], memory: TaskRecord[]): TaskRecord[] {
@@ -87,7 +100,9 @@ export class TaskTreeStore {
     this.reloadViews();
     this.notify();
     this.writeThrough = true;
-    if (!this.profile.didSeed && this.records.length === 0) {
+    // Demo seed is guest-only (web seeds only new anonymous users). Never insert
+    // TO-DO / Visa into a Google/Apple Firebase uid — that polluted linked accounts.
+    if (!this.profile.didSeed && this.records.length === 0 && isLocalOnlyUid(this.uid)) {
       await insertGuestSeed(this);
       this.profile = { ...this.profile, didSeed: true, updatedAt: Date.now() };
       await this.repo.saveProfile(this.profile);
@@ -133,6 +148,10 @@ export class TaskTreeStore {
     return this.records;
   }
 
+  childrenOf(parentID: string): TaskTree[] {
+    return childrenForest(parentID, this.records);
+  }
+
   task(id: string): TaskRecord | undefined {
     return this.records.find((doc) => doc.id === id);
   }
@@ -143,10 +162,18 @@ export class TaskTreeStore {
       .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'));
   }
 
+  siblingsOnList(parentID: string): TaskRecord[] {
+    return listSiblings(parentID, this.records);
+  }
+
   async create(input: CreateTaskInput, options?: { persist?: boolean }): Promise<TaskRecord> {
     const parentID = input.parentID ?? '';
     let order: number;
-    if (input.place === 'start') {
+    if (typeof input.orderValue === 'number') {
+      order = input.orderValue;
+    } else if (typeof input.index === 'number') {
+      order = computeOrderValue(input.index, this.siblingsOnList(parentID));
+    } else if (input.place === 'start') {
       const siblings = this.records.filter((doc) => doc.parentID === parentID && !doc.isTombstone);
       const min = siblings.reduce((lowest, doc) => Math.min(lowest, doc.orderValue), 0);
       order = min - 1;
@@ -182,9 +209,14 @@ export class TaskTreeStore {
       startDateISO,
       notes: input.notes ?? '',
       isDone: input.isDone ?? false,
+      isCollapsed: input.isCollapsed ?? false,
       imageDownloadURL: input.imageDownloadURL ?? '',
+      imageFullPath: input.imageFullPath ?? '',
       iconURL: input.iconURL ?? '',
+      templateID: input.templateID ?? '',
+      timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       childrenLayout: input.childrenLayout ?? 'normal',
+      photoLayout: input.photoLayout ?? 'split-view',
       onList: input.onList ?? true,
       orderValue: order,
       treeISOs,
@@ -274,10 +306,66 @@ export class TaskTreeStore {
     await this.persist();
   }
 
-  async nest(id: string, underParentID: string): Promise<void> {
-    this.records = applyReparent(id, underParentID, this.records);
+  async nest(id: string, underParentID: string, index?: number): Promise<void> {
+    const rooms = this.siblingsOnList(underParentID).filter((doc) => doc.id !== id);
+    await this.placeOnList(id, { parentID: underParentID, index: index ?? rooms.length });
+  }
+
+  /**
+   * Web placeOnList: reparent + orderValue + onList.
+   * `unschedule` clears calendar fields (drag from calendar onto the list).
+   */
+  async placeOnList(
+    id: string,
+    opts: { parentID: string; index: number; unschedule?: boolean },
+  ): Promise<boolean> {
+    const current = this.task(id);
+    if (!current) return false;
+    if (opts.parentID === id) return false;
+    const rooms = this.siblingsOnList(opts.parentID);
+    const orderValue = computeOrderValue(opts.index, rooms);
+    if (current.parentID !== opts.parentID) {
+      const before = current.parentID;
+      this.records = applyReparent(id, opts.parentID, this.records);
+      if (this.task(id)?.parentID === before && opts.parentID !== before) return false;
+    }
+    if (opts.unschedule) {
+      this.records = applyDateChange(id, '', this.records);
+    }
+    this.records = this.records.map((doc) => {
+      if (doc.id !== id) return doc;
+      return {
+        ...doc,
+        orderValue,
+        onList: true,
+        ...(opts.unschedule ? { startTime: '', startDateISO: '' } : {}),
+        pendingSync: true,
+        updatedAt: Date.now(),
+      };
+    });
+    const parent = opts.parentID ? this.task(opts.parentID) : undefined;
+    if (parent?.isCollapsed) {
+      this.records = this.records.map((doc) =>
+        doc.id === parent.id ? { ...doc, isCollapsed: false, pendingSync: true, updatedAt: Date.now() } : doc,
+      );
+    }
+    this.profile = {
+      ...this.profile,
+      maxOrderValue: Math.max(this.profile.maxOrderValue, orderValue),
+      updatedAt: Date.now(),
+      pendingSync: true,
+    };
     await this.sync.enqueue(this.uid, 'batchTree', 'tasks', id);
     await this.persist();
+    return true;
+  }
+
+  /** Web placeOnCal. Nested calendar blocks become roots. */
+  async placeOnCal(id: string, dayISO: string, time: string, unparent = false): Promise<void> {
+    if (unparent) {
+      this.records = applyReparent(id, '', this.records);
+    }
+    await this.schedule(id, dayISO, time);
   }
 
   async indent(id: string): Promise<boolean> {
@@ -292,7 +380,9 @@ export class TaskTreeStore {
     const currentParent = parentIDOf(id, this.records);
     if (!currentParent) return false;
     const grandparent = parentIDOf(currentParent, this.records) ?? '';
-    await this.nest(id, grandparent);
+    const rooms = this.siblingsOnList(grandparent).filter((doc) => doc.id !== id);
+    const parentIndex = rooms.findIndex((doc) => doc.id === currentParent);
+    await this.nest(id, grandparent, parentIndex < 0 ? rooms.length : parentIndex + 1);
     return true;
   }
 
@@ -404,7 +494,7 @@ export class TaskTreeStore {
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
 
   async setListHeightSplit(value: number): Promise<void> {
-    this.listHeightSplit = Math.min(0.85, Math.max(0.25, value));
+    this.listHeightSplit = Math.min(1, Math.max(0, value));
     this.profile = { ...this.profile, listHeightSplit: this.listHeightSplit, updatedAt: Date.now() };
     this.notify();
     if (this.splitTimer) clearTimeout(this.splitTimer);

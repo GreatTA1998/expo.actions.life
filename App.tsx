@@ -5,7 +5,6 @@ import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-c
 import type { PersistedSession } from './src/models/types';
 import type { TaskRepository } from './src/persistence/repository';
 import { MemoryRepository } from './src/persistence/memoryRepository';
-import { migrateUid } from './src/persistence/migrate';
 import { openTaskRepository } from './src/persistence/openRepository';
 import { restoreSession, signOut } from './src/services/authSession';
 import { promoteLocalGuest } from './src/services/promoteGuest';
@@ -63,18 +62,15 @@ export default function App() {
     const backing = repoRef.current ?? memoryRepo.current;
 
     if (storeRef.current?.uid !== session.uid) {
-      const from = previousUid.current;
+      // Do not migrateUid across UID changes here. Guest→existing Google/Apple
+      // (signInWithCredential) must load that account's data only — matching web
+      // auth/callback. Cross-UID copy lives solely in promoteLocalGuest (guest-* →
+      // Firebase anonymous). Blind migrate was merging demo seed into Google.
       const next = new TaskTreeStore(backing, session.uid);
       storeRef.current = next;
       setStore(next);
       previousUid.current = session.uid;
       void (async () => {
-        if (from && from !== session.uid) {
-          await migrateUid(backing, from, session.uid);
-          if (repoRef.current && repoRef.current !== backing) {
-            await migrateUid(repoRef.current, from, session.uid);
-          }
-        }
         await next.init();
         const disk = repoRef.current;
         if (disk && disk !== backing) await next.adoptRepository(disk);

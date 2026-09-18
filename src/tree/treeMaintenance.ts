@@ -26,6 +26,19 @@ export function inboxForest(docs: TaskRecord[]): TaskTree[] {
   return buildForest(docs.filter((doc) => doc.onList));
 }
 
+/** Full subtree under a parent, including calendar-only children (web TaskElement compact list). */
+export function childrenForest(parentID: string, docs: TaskRecord[]): TaskTree[] {
+  const live = docs.filter((doc) => !doc.isTombstone);
+  const grouped = nodesByParent(live);
+  function hydrate(node: TaskRecord): TaskTree {
+    return {
+      task: node,
+      children: (grouped[node.id] ?? []).map(hydrate),
+    };
+  }
+  return (grouped[parentID] ?? []).map(hydrate);
+}
+
 export function subtreeIDs(of: string, docs: TaskRecord[]): string[] {
   const children = new Map<string, TaskRecord[]>();
   for (const doc of docs) {
@@ -139,6 +152,21 @@ export function applyDeletion(taskID: string, docs: TaskRecord[]): TaskRecord[] 
 
 export function nextOrderValue(maxOrderValue: number): number {
   return maxOrderValue + 1;
+}
+
+/** Same placement math as web DragDropContext.computeOrderValue. */
+export function computeOrderValue(index: number, rooms: { orderValue: number }[]): number {
+  const n = rooms.length;
+  if (n === 0) return 1;
+  if (index <= 0) return rooms[0].orderValue / 1.1;
+  if (index >= n) return rooms[n - 1].orderValue + 1;
+  return (rooms[index - 1].orderValue + rooms[index].orderValue) / 2;
+}
+
+export function listSiblings(parentID: string, docs: TaskRecord[]): TaskRecord[] {
+  return docs
+    .filter((doc) => doc.parentID === parentID && !doc.isTombstone && doc.onList)
+    .sort((a, b) => a.orderValue - b.orderValue);
 }
 
 export function previousSibling(id: string, forest: TaskTree[]): TaskRecord | null {

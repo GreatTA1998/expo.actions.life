@@ -1,89 +1,247 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { isPastDate, relativeDateChip } from '../dates';
 import { colors, type } from '../theme';
 import type { TaskRecord, TaskTree } from '../models/types';
+import { useDragDrop } from './drag/DragDropContext';
+import { measureNode } from './drag/geometry';
+import { HOLD_DELAY, createNativeHold } from './drag/nativeHold';
+import { Dropzone } from './Dropzone';
+
+export type ComposerSlot = { parentID: string; index: number } | null;
 
 type Props = {
   node: TaskTree;
   depth: number;
+  composer: ComposerSlot;
+  onCompose: (slot: ComposerSlot) => void;
+  onCreate: (slot: { parentID: string; index: number }, name: string, extras?: { duration?: number }) => void;
   onToggleDone: (id: string) => void;
   onToggleCollapsed: (id: string) => void;
   onOpen: (id: string) => void;
   onMenu: (task: TaskRecord) => void;
-  onDragStart?: (task: TaskRecord) => void;
 };
 
-export function TaskRow({ node, depth, onToggleDone, onToggleCollapsed, onOpen, onMenu, onDragStart }: Props) {
+export function TaskRow({
+  node,
+  depth,
+  composer,
+  onCompose,
+  onCreate,
+  onToggleDone,
+  onToggleCollapsed,
+  onOpen,
+  onMenu,
+}: Props) {
   const { task, children } = node;
+  const { registerZone, bestId, armDrag, activateDrag, refreshZones } = useDragDrop();
+  const rowRef = useRef<View>(null);
+  const startDrag = useRef<(pageX: number, pageY: number, activate?: boolean) => void>(() => {});
+  const hold = useRef(createNativeHold((pageX, pageY) => startDrag.current(pageX, pageY, true))).current;
   const hasChildren = children.length > 0;
-  const dateBadge = task.startDateISO ? task.startDateISO.slice(5) : '';
+  const dateBadge = task.startDateISO ? relativeDateChip(task.startDateISO) : '';
+  const datePast = isPastDate(task.startDateISO);
+  const nestId = `nest-${task.id}`;
+  const highlighted = bestId === nestId;
+
+  useEffect(() => {
+    return registerZone({
+      id: nestId,
+      target: { kind: 'nest', parentID: task.id, at: 'first' },
+      ref: rowRef,
+      ownerTaskId: task.id,
+    });
+  }, [nestId, registerZone, task.id]);
+
+  useEffect(() => () => hold.dispose(), [hold]);
+
+  function startPointerDrag(pageX: number, pageY: number, activate = false) {
+    const token = activate ? activateDrag() : undefined;
+    measureNode(
+      rowRef.current,
+      (rect) => {
+        armDrag(task, 'list', pageX, pageY, rect, token);
+        if (activate && token != null) activateDrag(token);
+      },
+      `task-row-${task.id}`,
+    );
+  }
+  startDrag.current = startPointerDrag;
 
   return (
     <View>
-      <View style={[styles.row, { paddingLeft: 12 + depth * 18 }]}>
-        {hasChildren ? (
+      <View
+        ref={rowRef}
+        collapsable={false}
+        nativeID={`nest-${task.id}`}
+        testID={`task-row-${task.id}`}
+        onLayout={() => refreshZones()}
+        {...(Platform.OS === 'web'
+          ? ({
+              onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
+                startPointerDrag(
+                  event.nativeEvent?.pageX ?? event.clientX ?? 0,
+                  event.nativeEvent?.pageY ?? event.clientY ?? 0,
+                );
+              },
+            } as object)
+          : {})}
+        style={[styles.row, { paddingLeft: 12 + depth * 18 }, highlighted && styles.nestHot]}
+      >
+        <View style={styles.titleRow}>
+          {hasChildren ? (
+            <Pressable onPress={() => onToggleCollapsed(task.id)} hitSlop={8} style={styles.chevronHit}>
+              <Text style={styles.chevron}>
+                {task.isCollapsed ? '▸' : '▾'} {children.filter((child) => child.task.isDone).length}/{children.length}
+              </Text>
+            </Pressable>
+          ) : (
+            <View style={styles.chevronHit} />
+          )}
           <Pressable
-            onPress={() => onToggleCollapsed(task.id)}
-            hitSlop={8}
-            style={styles.chevronHit}
+            onPress={() => onToggleDone(task.id)}
+            style={[styles.box, task.isDone && styles.boxDone]}
+            hitSlop={6}
+            testID={`task-done-${task.id}`}
           >
-            <Text style={styles.chevron}>{task.isCollapsed ? '▸' : '▾'}</Text>
+            {task.isDone ? <Text style={styles.check}>✓</Text> : null}
           </Pressable>
-        ) : (
-          <View style={styles.chevronHit} />
-        )}
-        <Pressable
-          onPress={() => onToggleDone(task.id)}
-          style={[styles.box, task.isDone && styles.boxDone]}
-          hitSlop={6}
-        >
-          {task.isDone ? <Text style={styles.check}>✓</Text> : null}
-        </Pressable>
-        <Pressable
-          onPress={() => onOpen(task.id)}
-          onLongPress={() => onDragStart?.(task)}
-          delayLongPress={180}
-          style={styles.body}
-        >
-          <Text
-            style={[styles.name, task.isDone && styles.nameDone]}
-            numberOfLines={2}
+          <Pressable
+            onPress={() => onOpen(task.id)}
+            onLongPress={(event) => {
+              if (Platform.OS === 'web') return;
+              hold.longPress(event.nativeEvent.pageX, event.nativeEvent.pageY);
+            }}
+            delayLongPress={HOLD_DELAY}
+            onPressIn={(event) => {
+              const pageX = event.nativeEvent.pageX;
+              const pageY = event.nativeEvent.pageY;
+              if (Platform.OS === 'web') {
+                startPointerDrag(pageX, pageY);
+                return;
+              }
+              hold.pressIn(pageX, pageY);
+            }}
+            onTouchMove={(event) => {
+              if (Platform.OS === 'web') return;
+              hold.touchMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
+            }}
+            onTouchEnd={() => {
+              if (Platform.OS !== 'web') hold.touchEnd();
+            }}
+            onTouchCancel={() => {
+              if (Platform.OS !== 'web') hold.touchEnd();
+            }}
+            {...(Platform.OS === 'web'
+              ? ({
+                  onPointerDown: (event: { nativeEvent?: { pageX?: number; pageY?: number }; clientX?: number; clientY?: number }) => {
+                    startPointerDrag(
+                      event.nativeEvent?.pageX ?? event.clientX ?? 0,
+                      event.nativeEvent?.pageY ?? event.clientY ?? 0,
+                    );
+                  },
+                } as object)
+              : {})}
+            style={styles.body}
+            testID={`task-open-${task.id}`}
           >
-            {task.name || 'Untitled'}
-          </Text>
-          {dateBadge ? <Text style={styles.badge}>{dateBadge}</Text> : null}
-        </Pressable>
-        <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit}>
-          <Text style={styles.menu}>⋯</Text>
-        </Pressable>
+            <View style={styles.nameRow}>
+              <Text
+                style={[styles.name, depth > 0 ? styles.nameNested : styles.nameRoot, task.isDone && styles.nameDone]}
+                numberOfLines={2}
+              >
+                {task.name || 'Untitled'}
+              </Text>
+              {task.startDateISO ? <Text style={[styles.calGlyph, datePast && styles.calGlyphOverdue]}>▦</Text> : null}
+              {dateBadge ? (
+                <Text style={[styles.badge, datePast ? styles.badgePast : styles.badgeSoon]}>{dateBadge}</Text>
+              ) : null}
+            </View>
+          </Pressable>
+          <Pressable onPress={() => onMenu(task)} hitSlop={8} style={styles.menuHit} testID={`task-menu-${task.id}`}>
+            <Text style={styles.menu}>⋯</Text>
+          </Pressable>
+        </View>
+        {task.notes ? (
+          <Pressable onPress={() => onOpen(task.id)} style={styles.notesHit}>
+            <Text style={styles.notes} numberOfLines={2}>
+              {task.notes}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
-      {!task.isCollapsed
-        ? children.map((child) => (
-            <TaskRow
-              key={child.task.id}
-              node={child}
-              depth={depth + 1}
-              onToggleDone={onToggleDone}
-              onToggleCollapsed={onToggleCollapsed}
-              onOpen={onOpen}
-              onMenu={onMenu}
-              onDragStart={onDragStart}
-            />
-          ))
-        : null}
+      {!task.isCollapsed ? (
+        <View style={styles.nested}>
+          {children.map((child, i) => (
+            <View key={child.task.id}>
+              <Dropzone
+                zoneId={`list-${task.id}-${i}`}
+                parentID={task.id}
+                index={i}
+                depth={depth + 1}
+                composing={composer?.parentID === task.id && composer.index === i}
+                onCompose={() => onCompose({ parentID: task.id, index: i })}
+                onSubmit={(name, extras) => onCreate({ parentID: task.id, index: i }, name, extras)}
+                onCancel={() => onCompose(null)}
+              />
+              <TaskRow
+                node={child}
+                depth={depth + 1}
+                composer={composer}
+                onCompose={onCompose}
+                onCreate={onCreate}
+                onToggleDone={onToggleDone}
+                onToggleCollapsed={onToggleCollapsed}
+                onOpen={onOpen}
+                onMenu={onMenu}
+              />
+            </View>
+          ))}
+          <Dropzone
+            key={`list-${task.id}-end-${children.length}`}
+            zoneId={`list-${task.id}-${children.length}`}
+            parentID={task.id}
+            index={children.length}
+            depth={depth + 1}
+            ghost={children.length > 0}
+            composing={composer?.parentID === task.id && composer.index === children.length}
+            onCompose={() => onCompose({ parentID: task.id, index: children.length })}
+            onSubmit={(name, extras) => onCreate({ parentID: task.id, index: children.length }, name, extras)}
+            onCancel={() => onCompose(null)}
+          />
+          <Pressable
+            collapsable={false}
+            testID={`empty-padding-${task.id}`}
+            accessibilityLabel="Add a subtask on empty paper"
+            onPress={() => onCompose({ parentID: task.id, index: children.length })}
+            style={styles.nestedEmpty}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
     minHeight: 44,
     paddingRight: 8,
     paddingVertical: 4,
+    borderRadius: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nestHot: {
+    backgroundColor: colors.dropPreview,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.dropBorder,
   },
   chevronHit: {
-    width: 22,
+    minWidth: 22,
+    paddingRight: 4,
     alignItems: 'center',
   },
   chevron: {
@@ -93,7 +251,7 @@ const styles = StyleSheet.create({
   box: {
     width: 20,
     height: 20,
-    borderRadius: 5,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: colors.ink,
     alignItems: 'center',
@@ -112,6 +270,9 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -119,16 +280,52 @@ const styles = StyleSheet.create({
   name: {
     flex: 1,
     color: colors.ink,
+  },
+  nameRoot: {
     fontSize: type.body,
+    fontWeight: '600',
+  },
+  nameNested: {
+    fontSize: 14,
+    fontWeight: '400',
   },
   nameDone: {
     color: colors.done,
     textDecorationLine: 'line-through',
   },
-  badge: {
+  calGlyph: {
+    color: colors.accent,
+    fontSize: 11,
+  },
+  calGlyphOverdue: {
+    color: colors.danger,
+  },
+  notesHit: {
+    // Match web RecursiveTask: notes sit under the title, indented past the checkbox.
+    marginLeft: 52,
+    marginTop: 2,
+    paddingRight: 28,
+  },
+  notes: {
     color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  badge: {
     fontSize: type.micro,
     letterSpacing: 0.3,
+    overflow: 'hidden',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  badgePast: {
+    color: '#808080',
+    backgroundColor: 'rgb(231,231,231)',
+  },
+  badgeSoon: {
+    color: '#ffffff',
+    backgroundColor: 'hsla(0, 0%, 0%, 0.6)',
   },
   menuHit: {
     width: 28,
@@ -138,5 +335,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 18,
     lineHeight: 20,
+  },
+  nested: {
+    position: 'relative',
+  },
+  nestedEmpty: {
+    minHeight: 28,
   },
 });
