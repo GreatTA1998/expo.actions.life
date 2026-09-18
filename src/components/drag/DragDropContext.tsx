@@ -13,6 +13,7 @@ import { Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import { colors, type } from '../../theme';
 import type { TaskRecord } from '../../models/types';
 import { clipRectToWindow, edgeScrollDelta, pickBestZoneId, readWindowRect, type ZoneHit } from './geometry';
+import { createDragGesture } from './gesture';
 
 export type DropTarget =
   | { kind: 'list'; parentID: string; index: number }
@@ -66,8 +67,9 @@ type DragContextValue = {
     pageX: number,
     pageY: number,
     rect: Rect,
+    gesture?: number,
   ) => void;
-  activateDrag: () => void;
+  activateDrag: (gesture?: number) => number;
   moveDrag: (pageX: number, pageY: number) => void;
   endDrag: () => void;
   cancelDrag: () => void;
@@ -114,6 +116,7 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   const dragRef = useRef<DragSession | null>(null);
   const bestRef = useRef('');
   const pendingActivate = useRef(false);
+  const gesture = useRef(createDragGesture()).current;
   const zones = useRef(new Map<string, Zone>());
   const scrollers = useRef(new Map<string, Scroller>());
   const onDropRef = useRef(onDrop);
@@ -166,7 +169,9 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   }, []);
 
   const armDrag = useCallback(
-    (task: TaskRecord, origin: DragOrigin, pageX: number, pageY: number, rect: Rect) => {
+    (task: TaskRecord, origin: DragOrigin, pageX: number, pageY: number, rect: Rect, token?: number) => {
+      if (token != null && !gesture.live(token)) return;
+      if (token == null && Platform.OS !== 'web' && !pendingActivate.current) return;
       const session: DragSession = {
         id: task.id,
         name: task.name,
@@ -185,25 +190,34 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
       dragRef.current = session;
       setDrag(session);
       if (session.active) {
+        setPointerLocked(true);
         refreshZones();
         pickZone(session);
       }
     },
-    [pickZone, refreshZones],
+    [gesture, pickZone, refreshZones],
   );
 
-  const activateDrag = useCallback(() => {
-    pendingActivate.current = true;
-    setPointerLocked(true);
-    const session = dragRef.current;
-    if (!session) return;
-    if (session.active) return;
-    const next = { ...session, active: true };
-    dragRef.current = next;
-    setDrag(next);
-    refreshZones();
-    pickZone(next);
-  }, [pickZone, refreshZones]);
+  const activateDrag = useCallback(
+    (token?: number) => {
+      if (token == null) {
+        token = pendingActivate.current ? gesture.current() : gesture.begin();
+      }
+      if (!gesture.live(token)) return token;
+      pendingActivate.current = true;
+      setPointerLocked(true);
+      const session = dragRef.current;
+      if (!session) return token;
+      if (session.active) return token;
+      const next = { ...session, active: true };
+      dragRef.current = next;
+      setDrag(next);
+      refreshZones();
+      pickZone(next);
+      return token;
+    },
+    [gesture, pickZone, refreshZones],
+  );
 
   const moveDrag = useCallback(
     (pageX: number, pageY: number) => {
@@ -242,13 +256,14 @@ export function DragDropProvider({ children, onDrop }: ProviderProps) {
   );
 
   const cancelDrag = useCallback(() => {
+    gesture.cancel();
     dragRef.current = null;
     bestRef.current = '';
     pendingActivate.current = false;
     setPointerLocked(false);
     setDrag(null);
     setBestId('');
-  }, []);
+  }, [gesture]);
 
   const endDrag = useCallback(() => {
     const session = dragRef.current;

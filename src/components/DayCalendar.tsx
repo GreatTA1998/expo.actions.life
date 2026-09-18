@@ -549,12 +549,12 @@ function CalBlock({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
-    if (activate) activateDrag();
+    const token = activate ? activateDrag() : undefined;
     measureNode(
       ref.current,
       (rect) => {
-        armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, rect);
-        if (activate) activateDrag();
+        armDrag(task, task.parentID ? 'nested-cal' : 'cal', pageX, pageY, rect, token);
+        if (activate && token != null) activateDrag(token);
       },
       `cal-block-${task.id}`,
     );

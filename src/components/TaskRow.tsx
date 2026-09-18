@@ -51,12 +51,12 @@ export function TaskRow({
   }, [nestId, registerZone, task.id]);
 
   function startPointerDrag(pageX: number, pageY: number, activate = false) {
-    if (activate) activateDrag();
+    const token = activate ? activateDrag() : undefined;
     measureNode(
       rowRef.current,
       (rect) => {
-        armDrag(task, 'list', pageX, pageY, rect);
-        if (activate) activateDrag();
+        armDrag(task, 'list', pageX, pageY, rect, token);
+        if (activate && token != null) activateDrag(token);
       },
       `task-row-${task.id}`,
     );
