@@ -73,12 +73,13 @@ export function Dropzone({
     wasComposing.current = composing;
   }, [composing, lock]);
 
-  function commit(name: string, extras?: CreateExtras) {
+  function commit(name: string, keepOpen: boolean, extras?: CreateExtras) {
     if (!lock.commit()) return;
     picking.current = false;
     if (name) {
       onSubmit(name, extras);
       setDraftValue('');
+      if (!keepOpen) onCancel();
     } else if (composingRef.current) {
       onCancel();
     }
@@ -109,19 +110,19 @@ export function Dropzone({
             placeholder="New task"
             placeholderTextColor={colors.faint}
             style={[styles.input, root ? styles.inputRoot : styles.inputNested]}
-            onSubmitEditing={() => commit(draftRef.current.trim())}
+            onSubmitEditing={() => commit(draftRef.current.trim(), true)}
             onEndEditing={() => {
               const name = draftRef.current.trim();
               lock.scheduleBlur(() => {
                 if (!alive.current || picking.current) return;
-                commit(name);
+                commit(name, false);
               });
             }}
             onBlur={() => {
               const name = draftRef.current.trim();
               lock.scheduleBlur(() => {
                 if (!alive.current || picking.current) return;
-                commit(name);
+                commit(name, false);
               });
             }}
             returnKeyType="done"
@@ -146,7 +147,7 @@ export function Dropzone({
                     picking.current = true;
                   }}
                   onPress={() => {
-                    commit(habit.name, { duration: habit.duration });
+                    commit(habit.name, false, { duration: habit.duration });
                   }}
                   style={styles.menuItem}
                 >
