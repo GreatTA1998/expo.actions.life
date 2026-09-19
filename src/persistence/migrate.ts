@@ -1,12 +1,14 @@
 import { defaultProfile } from '../models/types';
 import type { TaskRepository } from './repository';
+import { mergeUserProfiles } from '../services/syncMerge';
 
 export async function migrateUid(repo: TaskRepository, fromUid: string, toUid: string): Promise<void> {
   if (fromUid === toUid) return;
-  const [tasks, profile, outbox] = await Promise.all([
+  const [tasks, profile, outbox, destProfile] = await Promise.all([
     repo.loadTasks(fromUid),
     repo.loadProfile(fromUid),
     repo.loadOutbox(fromUid),
+    repo.loadProfile(toUid),
   ]);
   // Promote already copies then clears the source. A second migrate of the empty
   // source must not overwrite the destination.
@@ -17,8 +19,12 @@ export async function migrateUid(repo: TaskRepository, fromUid: string, toUid: s
     toUid,
     tasks.map((task) => ({ ...task, ownerUID: toUid, pendingSync: true })),
   );
-  if (profile) {
-    await repo.saveProfile({ ...profile, uid: toUid, pendingSync: true, updatedAt: Date.now() });
+  if (profile || destProfile) {
+    const base = destProfile ?? defaultProfile(toUid);
+    const incoming = profile ? { ...profile, uid: toUid } : null;
+    // Dest is primary so a guest '' email cannot wipe a Google account email.
+    const merged = mergeUserProfiles(base, incoming);
+    await repo.saveProfile({ ...merged, uid: toUid, pendingSync: true, updatedAt: Date.now() });
   }
   for (const op of outbox) {
     await repo.enqueue({ ...op, ownerUID: toUid });

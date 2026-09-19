@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import type { SyncKind, SyncOperation, TaskRecord, UserProfile } from '../models/types';
 import { randomID } from '../ids';
 import type { TaskRepository } from '../persistence/repository';
@@ -6,9 +6,11 @@ import { surroundingDays, todayISO } from '../dates';
 import { tryFirebase } from './firebase';
 import {
   chunk,
+  fromFirestoreProfile,
   fromFirestoreTask,
   isLocalOnlyUid,
   mergeRemoteTasks,
+  mergeUserProfiles,
   toFirestoreProfile,
   toFirestoreTask,
 } from './syncMerge';
@@ -51,7 +53,7 @@ export class SyncEngine {
     uid: string;
     tasks: TaskRecord[];
     profile: UserProfile;
-  }): Promise<{ drained: number; reason: string }> {
+  }): Promise<{ drained: number; reason: string; profile?: UserProfile }> {
     if (isLocalOnlyUid(input.uid)) {
       return { drained: 0, reason: 'local-only uid; promote guest when online' };
     }
@@ -88,11 +90,20 @@ export class SyncEngine {
           drained += 1;
         }
       }
-      await setDoc(doc(firebase.db, `users/${input.uid}`), toFirestoreProfile(input.profile), {
+      // Merge with remote profile first so local '' email cannot be the only source
+      // of truth, then write — toFirestoreProfile omits blank identity fields.
+      const remoteSnap = await getDoc(doc(firebase.db, `users/${input.uid}`));
+      const remoteProfile = fromFirestoreProfile(
+        input.uid,
+        remoteSnap.exists() ? (remoteSnap.data() as Record<string, unknown>) : undefined,
+      );
+      const profile = mergeUserProfiles(input.profile, remoteProfile);
+      await setDoc(doc(firebase.db, `users/${input.uid}`), toFirestoreProfile(profile), {
         merge: true,
       });
+      await this.repo.saveProfile(profile);
       await this.repo.clearOutbox(input.uid);
-      return { drained, reason: 'ok' };
+      return { drained, reason: 'ok', profile };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { drained, reason: message };

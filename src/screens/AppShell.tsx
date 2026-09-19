@@ -42,7 +42,10 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
         // linkWithCredential keeps the same uid — drain the guest outbox now that
         // Auth is a real Google user. signed-in (existing account) must not sync
         // this guest store; App boots the Google uid and pulls there.
-        if (outcome === 'linked') void store.syncNow();
+        if (outcome === 'linked') {
+          store.applySessionIdentity(next);
+          void store.syncNow();
+        }
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -58,7 +61,10 @@ export function AppShell({ store, session, onSignOut, onSession }: Props) {
       if (!idToken) throw new Error('Google returned no ID token.');
       const { session: next, outcome } = await finishGoogleAuthSession(idToken, session);
       onSession(next);
-      if (outcome === 'linked') void store.syncNow();
+      if (outcome === 'linked') {
+        store.applySessionIdentity(next);
+        void store.syncNow();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setTab('settings');

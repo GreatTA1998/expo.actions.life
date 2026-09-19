@@ -18,7 +18,7 @@ import {
 } from '../tree/treeMaintenance';
 import { peekFirebase } from './firebase';
 import { insertGuestSeed } from './seed';
-import { isLocalOnlyUid } from './syncMerge';
+import { isLocalOnlyUid, mergeUserProfiles } from './syncMerge';
 import { SyncEngine } from './syncEngine';
 
 export type CreateTaskInput = {
@@ -91,10 +91,8 @@ export class TaskTreeStore {
     const loadedProfile = await this.repo.loadProfile(this.uid);
     this.records = mergeTaskRecords(loaded, this.records);
     if (loadedProfile) {
-      this.profile = {
-        ...loadedProfile,
-        didSeed: loadedProfile.didSeed || this.profile.didSeed,
-      };
+      // Disk is primary for settings; memory only fills blank identity fields.
+      this.profile = mergeUserProfiles(loadedProfile, this.profile);
     }
     this.listHeightSplit = this.profile.listHeightSplit;
     this.reloadViews();
@@ -128,10 +126,8 @@ export class TaskTreeStore {
     const loadedProfile = await repo.loadProfile(this.uid);
     this.records = mergeTaskRecords(loaded, this.records);
     if (loadedProfile) {
-      this.profile = {
-        ...loadedProfile,
-        didSeed: loadedProfile.didSeed || this.profile.didSeed,
-      };
+      // Disk is primary for settings; memory only fills blank identity fields.
+      this.profile = mergeUserProfiles(loadedProfile, this.profile);
     }
     this.listHeightSplit = this.profile.listHeightSplit;
     this.repo = repo;
@@ -464,6 +460,17 @@ export class TaskTreeStore {
     return days;
   }
 
+  /** Keep Auth/session identity on the local profile without letting blanks wipe richer values. */
+  applySessionIdentity(session: { email?: string | null }): void {
+    const email = session.email ?? '';
+    if (!email && !this.profile.email) return;
+    this.profile = mergeUserProfiles(this.profile, {
+      ...this.profile,
+      email,
+      updatedAt: Date.now(),
+    });
+  }
+
   async syncNow(): Promise<{ drained: number; reason: string }> {
     const result = await this.sync.drainIfPossible({
       uid: this.uid,
@@ -471,6 +478,10 @@ export class TaskTreeStore {
       profile: this.profile,
     });
     this.lastSyncReason = result.reason;
+    if (result.profile) {
+      this.profile = mergeUserProfiles(this.profile, result.profile);
+      await this.repo.saveProfile(this.profile);
+    }
     if (result.reason === 'ok') {
       this.records = this.records.map((task) => ({ ...task, pendingSync: false }));
       await this.repo.replaceTasks(this.uid, this.records);

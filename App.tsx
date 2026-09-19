@@ -72,6 +72,7 @@ export default function App() {
       previousUid.current = session.uid;
       void (async () => {
         await next.init();
+        next.applySessionIdentity(session);
         const disk = repoRef.current;
         if (disk && disk !== backing) await next.adoptRepository(disk);
         try {
